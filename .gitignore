@@ -1,0 +1,13 @@
+# Build output
+.build/
+.swiftpm/
+*.xcodeproj
+DerivedData/
+
+# Test fixtures: .mpp files saved by Microsoft Project routinely embed the
+# author's display name and the machine path they were saved from. Keep them
+# local — never commit them.
+Fixtures/*.mpp
+Fixtures/*.mpt
+
+.DS_Store
