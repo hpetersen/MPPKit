@@ -1,0 +1,27 @@
+# Issues waiting on the reporter close after a month without a reply.
+name: Stale
+
+on:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v11
+        with:
+          only-labels: needs-info
+          days-before-stale: 21
+          days-before-close: 10
+          stale-issue-message: >
+            This issue is waiting for more information. It will close in 10
+            days unless there is a reply; it can always be reopened.
+          stale-pr-message: >
+            This pull request is waiting for changes. It will close in 10 days
+            unless there is activity; it can always be reopened.

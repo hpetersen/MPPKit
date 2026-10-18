@@ -1,5 +1,9 @@
 # MPPKit
 
+[![CI](https://github.com/hpetersen/MPPKit/actions/workflows/ci.yml/badge.svg)](https://github.com/hpetersen/MPPKit/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/hpetersen/MPPKit/actions/workflows/codeql.yml/badge.svg)](https://github.com/hpetersen/MPPKit/actions/workflows/codeql.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
 Native Swift reading **and writing** of Microsoft Project `.mpp` files, for
 macOS and iPadOS. No JVM, no .NET, no Microsoft Project on the
 machine.
@@ -235,6 +239,22 @@ structures it does not rebuild.
 against MPXJ's, field by field. It needs a JRE and a venv with
 `pip install mpxj jpype1`; see the script header. MPXJ is LGPL and runs only as
 an external tool here — it is never linked.
+
+### Continuous integration
+
+Every pull request and every push to `main` runs, on GitHub's macOS runners:
+
+- `swift build` (warnings are errors) and `swift test` on the current and the
+  previous macOS image, once per file in `Samples/`, so the fixture-based reader
+  and writer tests run instead of skipping;
+- a build of `MPPKit` for iPadOS;
+- the MPXJ oracle on every sample and on files the writer produces in the same
+  run (the feature sample, a blank template and a 500-task synthetic plan),
+  failing on any difference;
+- a licence-header check and CodeQL.
+
+`main` only accepts pull requests whose checks all pass. Pushing a version tag
+such as `0.2.0` on `main` reruns CI and publishes a GitHub release.
 
 ## Used in MPP Studio
 

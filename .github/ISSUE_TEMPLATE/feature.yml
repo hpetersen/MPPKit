@@ -1,0 +1,16 @@
+name: Feature request
+description: Something MPPKit does not read, write or model yet.
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you need
+      description: The Project feature or field, and what you want to do with it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The use case. It helps decide what to do first.

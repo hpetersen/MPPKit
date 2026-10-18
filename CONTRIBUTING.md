@@ -31,6 +31,11 @@ empty plan saved by Project.
   say what a field is and why it is read the way it is.
 - New source files start with the same licence header as the existing ones.
 
+CI builds and tests every pull request on macOS and iPadOS, runs the MPXJ
+oracle on the sample files, and checks licence headers and the agreement
+below. A pull request can merge once every check is green; it is squashed into
+one commit on `main`.
+
 ## Contributor licence agreement
 
 MPPKit is released under the GPL v3, and the same code is used in MPP Studio,
@@ -45,7 +50,7 @@ contributions are accepted on these terms:
 > closed-source software. You keep the copyright in your contribution, and you
 > may use it however you like.
 
-Please state in your first pull request that you agree to these terms.
+Tick the agreement box in the pull request description to accept these terms.
 
 ## Questions
 

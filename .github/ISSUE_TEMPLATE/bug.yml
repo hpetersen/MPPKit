@@ -1,0 +1,47 @@
+name: A file MPPKit reads or writes wrongly
+description: Something comes out wrong when reading, editing or saving a .mpp file.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please **do not attach a client's file**: real project files carry names, e-mail
+        addresses and the path they were saved from. If the problem only shows with the
+        file itself, say so and we will arrange a private way to send it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did (read, edit, save), what you expected and what you got.
+    validations:
+      required: true
+  - type: input
+    id: project
+    attributes:
+      label: Microsoft Project version and language
+      description: The version that last saved the file, e.g. "Project Professional (Microsoft 365), Danish".
+    validations:
+      required: true
+  - type: input
+    id: mppkit
+    attributes:
+      label: MPPKit version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: tree
+    attributes:
+      label: Output of `swift run mppdump tree <file.mpp>`
+      render: text
+  - type: textarea
+    id: meta
+    attributes:
+      label: Output of `swift run mppdump meta <file.mpp>`
+      render: text
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Does it reproduce in a new, empty plan saved by Project?
+      options: ['Yes', 'No', 'Not tried']
+    validations:
+      required: true

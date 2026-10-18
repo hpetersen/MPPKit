@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and anything else
+    url: mailto:hello@mppstudio.com
+    about: For anything that is not a bug or a feature request.
+  - name: Security problem
+    url: https://github.com/hpetersen/MPPKit/security/advisories/new
+    about: Report it privately, not as a public issue.

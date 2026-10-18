@@ -1,0 +1,4 @@
+# The MPXJ oracle's Python environment (see oracle.sh). Pinned so CI is
+# reproducible; Dependabot proposes upgrades.
+mpxj==16.10.0
+jpype1==1.7.1

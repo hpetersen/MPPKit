@@ -1,0 +1,33 @@
+# Pull requests from outside contributors must tick the licence-agreement box
+# in the pull request template (see CONTRIBUTING.md).
+name: Contributor licence agreement
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  cla:
+    name: CLA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check agreement
+        env:
+          EVENT: ${{ github.event_name }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ "$EVENT" = merge_group ]; then echo "checked on the pull request"; exit 0; fi
+          case "$ASSOCIATION" in OWNER|MEMBER|COLLABORATOR) echo "maintainer: $AUTHOR"; exit 0;; esac
+          case "$AUTHOR" in dependabot\[bot\]|github-actions\[bot\]) echo "bot: $AUTHOR"; exit 0;; esac
+          if printf '%s' "$BODY" | grep -qiE '^\s*-\s*\[x\]\s*I agree to the contributor licence agreement'; then
+            echo "agreement ticked by $AUTHOR"
+          else
+            echo "::error::Please tick 'I agree to the contributor licence agreement' in the pull request description (see CONTRIBUTING.md)."
+            exit 1
+          fi
