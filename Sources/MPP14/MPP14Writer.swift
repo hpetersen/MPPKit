@@ -688,10 +688,15 @@ private final class Session {
             rscRows.append(p)
             for v in rsc.vars(of: 0) { rscVars.append((0, v.field, v.payload)) }
         }
-        let rscDataFields = Set(MPP14File.resourceBaselineWork + MPP14File.resourceBaselineCost
-            + W.Rsc.baselineBudget.flatMap { [$0.work, $0.cost] } + W.Rsc.baselineTimephased
-            + MPP.CustomField.text + MPP.CustomField.number + MPP.CustomField.date
-            + [RF.name, RF.initials, RF.emailAddress])
+        // Built step by step: as one `+` chain it exceeds Swift 6.1's type-checker budget.
+        var rscDataFields = Set<UInt32>(MPP14File.resourceBaselineWork)
+        rscDataFields.formUnion(MPP14File.resourceBaselineCost)
+        rscDataFields.formUnion(W.Rsc.baselineBudget.flatMap { [$0.work, $0.cost] })
+        rscDataFields.formUnion(W.Rsc.baselineTimephased)
+        rscDataFields.formUnion(MPP.CustomField.text)
+        rscDataFields.formUnion(MPP.CustomField.number)
+        rscDataFields.formUnion(MPP.CustomField.date)
+        rscDataFields.formUnion([RF.name, RF.initials, RF.emailAddress])
         let rscProtoVars = rsc.vars(of: 0).filter { !rscDataFields.contains($0.field) }
         if !project.resources.isEmpty && rscProtoRow == nil {
             throw MPPError.template("no uid-0 resource record to clone")

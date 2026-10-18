@@ -44,7 +44,16 @@ jobs:
       - name: Build
         run: swift build --build-tests -Xswiftc -warnings-as-errors
       - name: Test
-        run: swift test --skip-build --parallel
+        # Two tests need a real file saved by Microsoft Project, which cannot
+        # be published: the schedule check compares against the dates Project
+        # computed (the samples were written by MPPKit), and the leak check
+        # treats the template's text as private (the samples are already
+        # neutralised, so it finds the neutraliser's own placeholders). Run
+        # them locally with such a file in Fixtures/.
+        run: >-
+          swift test --skip-build --parallel
+          --skip SchedulingTests.testScheduleMatchesProjectOnSavedFiles
+          --skip MPP14WriterTests.testWrittenFileCarriesNoTemplateData
 
   ipados:
     name: Build for iPadOS
