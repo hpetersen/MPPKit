@@ -10,4 +10,7 @@ DerivedData/
 Fixtures/*.mpp
 Fixtures/*.mpt
 
+# Project-saved files from MPXJ's test corpus (Tools/ci/fetch-corpus.sh).
+Corpus/
+
 .DS_Store

@@ -1,0 +1,28 @@
+# Where MPPKit and MPXJ disagree on the Project-saved corpus today
+# (Tools/ci/fetch-corpus.sh, MPXJ as pinned in Tools/mpxj-oracle/requirements.txt).
+# Tools/ci/corpus-oracle.sh fails on any difference not listed here. Each line
+# is a reader question still open; remove it once it is resolved.
+mpp14assignmentfields.mpp: assignments: MPXJ=[(0, 2, 1.0, 0.0, '2011-07-06T08:00', '2011-07-06T08:00'), (0, 3, 1.0, 0.0, '2011-07-06T08:00', '2011-07-06T08:00')] MPPKit=[]
+mpp14assignmentfields.mpp: calendar missing in MPPKit: MPXJ='Budget Work Resource' MPPKit=None
+mpp14availability.mpp: resource 2 max units: MPXJ=None MPPKit=1
+mpp14columns.mpp: task 1 'Task One' manual: MPXJ=True MPPKit=False
+mpp14duration.mpp: task 10 'Task 10' duration days: MPXJ=20.0 MPPKit=90
+mpp14duration.mpp: task 8 'Task 8' duration days: MPXJ=1.0 MPPKit=3
+mpp14duration.mpp: task 9 'Task 9' duration days: MPXJ=5.0 MPPKit=21
+mpp14exceptions.mpp: calendar Standard exceptions: MPXJ=[('2008-03-05', '2008-03-05', None), ('2008-03-09', '2008-03-09', None), ('2008-03-16', '2008-03-16', None)] MPPKit=[('2008-03-05', '2008-03-05', ''), ('2008-03-09', '2008-03-09', ''), ('2008-03-16', '2008-03-16', '')]
+mpp14timephasedsegmentsmanual.mpp: calendar Task Eight exceptions: MPXJ=[('2011-02-08', '2011-02-08', None), ('2011-02-10', '2011-02-10', None), ('2011-02-12', '2011-02-13', None)] MPPKit=[('2011-02-08', '2011-02-08', ''), ('2011-02-10', '2011-02-10', ''), ('2011-02-12', '2011-02-13', '')]
+mpp14timephasedsegmentsmanualoffsets.mpp: assignments: MPXJ=[] MPPKit=[(22, 1, 1, 40, '2024-07-28T01:00', '2024-08-01T09:00')]
+mpp14timephasedsegmentsmanualoffsets.mpp: task 27 'Task with 2h Resource' duration days: MPXJ=4.25 MPPKit=7.25
+mpp14timephasedsegmentsmanualoffsets.mpp: task 29 'Task end mod' duration days: MPXJ=7.125 MPPKit=10.125
+mpp14timephasedsegmentsmanualoffsets.mpp: task uid set: MPXJ=[] MPPKit=[22]
+mpp14timephasedsegments.mpp: calendar Task Eight exceptions: MPXJ=[('2011-02-08', '2011-02-08', None), ('2011-02-10', '2011-02-10', None), ('2011-02-12', '2011-02-13', None)] MPPKit=[('2011-02-08', '2011-02-08', ''), ('2011-02-10', '2011-02-10', ''), ('2011-02-12', '2011-02-13', '')]
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None
+ResourceIdAndUniqueId-project2013-mpp14.mpp: calendar missing in MPPKit: MPXJ=None MPPKit=None

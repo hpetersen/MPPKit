@@ -32,8 +32,10 @@ empty plan saved by Project.
 - New source files start with the same licence header as the existing ones.
 
 CI builds and tests every pull request on macOS and iPadOS, runs the MPXJ
-oracle on the sample files, and checks licence headers and the agreement
-below. A pull request can merge once every check is green; it is squashed into
+oracle on the sample files and on files Microsoft Project saved (MPXJ's test
+corpus, fetched by `Tools/ci/fetch-corpus.sh`), checks every written file
+against the rules Project's own files keep (`mppdump check`), and checks
+licence headers and the agreement below. A pull request can merge once every check is green; it is squashed into
 one commit on `main`.
 
 ## Contributor licence agreement
