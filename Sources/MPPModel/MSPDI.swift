@@ -9,6 +9,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// Microsoft Project's XML format (MSPDI, the schema Project writes as
 /// "XML Format"): the plan as text, for Project versions, tools and services
