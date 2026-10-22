@@ -304,9 +304,23 @@ public enum OLEPropertySet {
     /// The Foundation encoding for a Windows code page number, as property 1
     /// of a section declares it (1252, 1250, 932, ...).
     public static func stringEncoding(codePage: UInt32) -> String.Encoding? {
+        #if canImport(Darwin)
         let cf = CFStringConvertWindowsCodepageToEncoding(codePage)
         guard cf != kCFStringEncodingInvalidId else { return nil }
         return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
+        #else
+        // swift-corelibs-foundation has no CFString code-page table.
+        switch codePage {
+        case 1250: return .windowsCP1250
+        case 1251: return .windowsCP1251
+        case 1252: return .windowsCP1252
+        case 1253: return .windowsCP1253
+        case 1254: return .windowsCP1254
+        case 932: return .shiftJIS
+        case 65001: return .utf8
+        default: return nil
+        }
+        #endif
     }
 
     /// FILETIME is 100-nanosecond ticks since 1601-01-01; `Date` counts seconds

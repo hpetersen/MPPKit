@@ -30,6 +30,8 @@ func usage() {
       mppdump <command> <file.mpp>
       mppdump sample <template.mpp> <out.mpp>
       mppdump template <project.mpp> <out.mpp>
+      mppdump check <file.mpp>...
+      mppdump fixbits <in.mpp> <out.mpp>
 
     COMMANDS
       tree        container tree: every storage and stream with its size
@@ -46,6 +48,10 @@ func usage() {
       template    turn any Project-saved file into a clean writer template: no
                   user data, a summary task over two linked tasks
       json        the whole parsed project as JSON
+      check       the rules every Project-saved file keeps (meta bits); lists
+                  what breaks them, exits 1 if anything does
+      fixbits     set every var-field meta bit from the record's own values and
+                  change nothing else (repairs files written before that fix)
       xml         export as Microsoft Project XML (MSPDI): mppdump xml <file.mpp> <out.xml>
       schedcheck  reschedule with MPPKit and compare with the dates, late dates
                   and critical path Project saved in the file
@@ -142,6 +148,35 @@ if command == "synthfile" {
         print("wrote \(args[3]): \(p.tasks.count) tasks")
         exit(0)
     } catch { fail("\(error)") }
+}
+
+if command == "check" {
+    var failed = false
+    for file in args.dropFirst(2) {
+        guard let f = try? MPP14File(path: file) else {
+            print("\(file): cannot read")
+            failed = true
+            continue
+        }
+        let issues = f.conformanceIssues()
+        print("\(file): \(issues.isEmpty ? "conforms" : "\(issues.count) issues")")
+        for issue in issues.prefix(20) { print("  \(issue)") }
+        if issues.count > 20 { print("  … \(issues.count - 20) more") }
+        failed = failed || !issues.isEmpty
+    }
+    exit(failed ? 1 : 0)
+}
+
+if command == "fixbits" {
+    guard args.count >= 4 else { usage(); exit(2) }
+    do {
+        let bytes = try MPP14File(path: path).repairingPresenceBits()
+        try Data(bytes).write(to: URL(fileURLWithPath: args[3]))
+        print("wrote \(args[3])")
+        exit(0)
+    } catch {
+        fail("\(error)")
+    }
 }
 
 if command == "sample" || command == "template" {

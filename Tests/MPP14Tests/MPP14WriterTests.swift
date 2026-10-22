@@ -348,9 +348,9 @@ final class MPP14WriterTests: XCTestCase {
         let F = MPP.TaskField.self
         for id in [F.percentComplete, F.percentWorkComplete, F.actualDuration, F.actualStart, F.actualFinish,
                    F.constraintType, F.constraintDate, F.calendarUniqueID, F.deadline, F.stop, F.resume] {
-            guard let idx = items.firstIndex(where: { $0.nativeID == id }) else { continue }
+            guard let bit = MPP.metaBits(items)[id] else { continue }
             for i in data.indices where data[i].count > 100 {
-                XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], entryIndex: idx), 1,
+                XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], bit), 1,
                                "row \(i): presence bit of field \(id) cleared")
             }
         }
@@ -371,8 +371,9 @@ final class MPP14WriterTests: XCTestCase {
         }
         let (m1, r1) = try blk("Fixed", 34), (m2, _) = try blk("Fixed2", 53)
         let taskIt = items.first { $0.nativeID == MPP.AssignmentField.taskUniqueID && $0.inFixed }!
-        guard let started = items.firstIndex(where: { $0.nativeID == MPP.AssignmentField.started }),
-              let finished = items.firstIndex(where: { $0.nativeID == MPP.AssignmentField.finished }) else {
+        let bits = MPP.metaBits(items)
+        guard let started = bits[MPP.AssignmentField.started],
+              let finished = bits[MPP.AssignmentField.finished] else {
             throw XCTSkip("template has no assignment progress flags")
         }
         var checked = 0
@@ -380,9 +381,9 @@ final class MPP14WriterTests: XCTestCase {
             let uid = Int(BinaryReader(r1[i]).u32(at: taskIt.offset)!)
             guard let t = project.task(uid: uid) else { continue }
             checked += 1
-            XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], entryIndex: started) == 1, t.percentComplete > 0,
+            XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], started) == 1, t.percentComplete > 0,
                            "task \(uid) \(t.name): started flag")
-            XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], entryIndex: finished) == 1, t.percentComplete == 100,
+            XCTAssertEqual(MPP.metaBit(meta: m1[i], meta2: m2[i], finished) == 1, t.percentComplete == 100,
                            "task \(uid) \(t.name): finished flag")
         }
         XCTAssertGreaterThan(checked, 0)

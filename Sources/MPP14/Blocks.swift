@@ -53,7 +53,8 @@ public enum MPP {
         public static let defaultFinishTime: UInt32 = 37_748_769
         /// `u16`.
         public static let daysPerMonth: UInt32 = 37_753_743
-        /// When the baseline was last saved; NA once it is cleared.
+        /// When the baseline was last saved; NA once it is cleared. The next ten
+        /// keys are Baseline1...Baseline10's.
         public static let baselineSaved: UInt32 = 37_753_749
         /// 2010-era only; stale values make Project renumber task uids.
         public static let legacyNextUIDs: UInt32 = 37_748_910
@@ -648,36 +649,82 @@ public enum MPP {
     // MARK: - Meta bitmaps
     //
     // A FixedMeta / Fixed2Meta item is: uint32 flags, uint32 offset-in-FixedData,
-    // then a bitmap with one bit per *field map entry* in little-endian bit
-    // order. FixedMeta carries entries 0..<((itemSize-8)*8); Fixed2Meta continues
-    // from there. Boolean fields store their value in their entry's bit; for
-    // value fields the bit marks the field as populated.
+    // then a bitmap with a bit per field map entry in little-endian bit order.
+    // Boolean fields store their value in their entry's bit; for value fields
+    // the bit marks the field as populated, and Project shows a var-data field
+    // whose bit is clear as empty.
+    //
+    // Two indexings meet in Fixed2Meta, established from files Project saved
+    // rather than understood:
+    // - booleans and fixed-data fields: the entry's place in the whole map,
+    //   FixedMeta holding the first (itemSize-8)*8 and Fixed2Meta the rest.
+    //   Checked against MPXJ, whose boolean positions are hard-coded, on the
+    //   M365 files' block-1 Manually Scheduled flag; the var-data indexing
+    //   reads it as set on every task.
+    // - var-data fields: the entry's place within its block, so Fixed2Meta
+    //   counts from the first block-1 entry. FixedMeta's bitmap is padded past
+    //   the block-0 entries (312 bits for 305 or 307), so the first indexing
+    //   lands these 5 to 7 places off. Checked on every var field of the 36
+    //   Project 2010/2013 files in MPXJ's corpus (Tools/ci/fetch-corpus.sh);
+    //   Baseline1...Baseline10 only show in Project with these bits.
+    // In block 0 the two agree.
     //
     // Because Project reorders the field map per file, these positions must be
     // derived from the file's own field map and never hard-coded.
 
-    public static func metaBit(meta: [UInt8], meta2: [UInt8], entryIndex: Int) -> Int? {
-        let bits0 = max(0, (meta.count - 8) * 8)
-        let buffer = entryIndex < bits0 ? meta : meta2
-        let i = entryIndex < bits0 ? entryIndex : entryIndex - bits0
+    /// A field map entry's meta bit.
+    public struct MetaBit: Equatable, Sendable {
+        /// The entry's place in the whole field map.
+        public var entry: Int
+        /// Its block, and its place among that block's entries.
+        public var block: Int
+        public var index: Int
+        /// The field's value is in var data, so the bit only says whether the
+        /// record has an entry for it, and is found by `block` and `index`.
+        public var varData: Bool
+    }
+
+    /// Each native field's meta bit, from the field map's own order. The
+    /// first entry of a field wins.
+    public static func metaBits(_ items: [FieldItem]) -> [UInt32: MetaBit] {
+        var out: [UInt32: MetaBit] = [:]
+        var count = [0, 0]
+        for (entry, item) in items.enumerated() {
+            let block = min(item.block, 1)
+            if out[item.nativeID] == nil {
+                out[item.nativeID] = MetaBit(entry: entry, block: block, index: count[block],
+                                             varData: item.offset == 65_535 && !Category.isBoolean(item.category))
+            }
+            count[block] += 1
+        }
+        return out
+    }
+
+    /// Which meta item holds a bit, and where in its bitmap.
+    private static func locate(_ bit: MetaBit, metaCount: Int) -> (second: Bool, index: Int) {
+        if bit.varData { return (bit.block != 0, bit.index) }
+        let bits0 = max(0, (metaCount - 8) * 8)
+        return bit.entry < bits0 ? (false, bit.entry) : (true, bit.entry - bits0)
+    }
+
+    public static func metaBit(meta: [UInt8], meta2: [UInt8], _ bit: MetaBit) -> Int? {
+        let (second, i) = locate(bit, metaCount: meta.count)
+        let buffer = second ? meta2 : meta
         let byte = 8 + i / 8
         guard byte < buffer.count else { return nil }
         return (Int(buffer[byte]) >> (i % 8)) & 1
     }
 
-    public static func setMetaBit(meta: inout [UInt8], meta2: inout [UInt8],
-                                  entryIndex: Int, value: Bool) {
-        let bits0 = max(0, (meta.count - 8) * 8)
-        let i = entryIndex < bits0 ? entryIndex : entryIndex - bits0
+    public static func setMetaBit(meta: inout [UInt8], meta2: inout [UInt8], _ bit: MetaBit, value: Bool) {
+        let (second, i) = locate(bit, metaCount: meta.count)
         let byte = 8 + i / 8
-        if entryIndex < bits0 {
+        let mask = UInt8(1 << (i % 8))
+        if !second {
             guard byte < meta.count else { return }
-            if value { meta[byte] |= UInt8(1 << (i % 8)) }
-            else { meta[byte] &= ~UInt8(1 << (i % 8)) }
+            if value { meta[byte] |= mask } else { meta[byte] &= ~mask }
         } else {
             guard byte < meta2.count else { return }
-            if value { meta2[byte] |= UInt8(1 << (i % 8)) }
-            else { meta2[byte] &= ~UInt8(1 << (i % 8)) }
+            if value { meta2[byte] |= mask } else { meta2[byte] &= ~mask }
         }
     }
 

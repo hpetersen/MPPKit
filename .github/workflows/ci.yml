@@ -41,6 +41,11 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: Fixture
         run: mkdir -p Fixtures && cp "Samples/${{ matrix.fixture }}.mpp" Fixtures/
+      - name: Project-saved corpus
+        # MPXJ's Project 2010/2013 test files, at a pinned commit: the only
+        # files in CI that Project itself wrote. ConformanceTests holds them,
+        # and what the writer produces, to the rules Project's files keep.
+        run: Tools/ci/fetch-corpus.sh Corpus
       - name: Build
         run: swift build --build-tests -Xswiftc -warnings-as-errors
       - name: Test
@@ -68,7 +73,8 @@ jobs:
 
   oracle:
     # An independent reader agreeing with MPPKit, field for field, on the
-    # shipped samples and on files the writer produces in this run.
+    # shipped samples, on files the writer produces in this run and on files
+    # Microsoft Project saved.
     name: MPXJ oracle
     runs-on: macos-26
     steps:
@@ -94,6 +100,16 @@ jobs:
           "$dump" synthfile Samples/Blank-Template.mpp out/synth-500.mpp 500
       - name: Compare with MPXJ
         run: Tools/ci/oracle-check.sh Samples/*.mpp out/*.mpp
+      - name: Project-saved corpus
+        run: Tools/ci/fetch-corpus.sh Corpus
+      - name: Rules Project's files keep
+        # Meta bits that say a field has a value exactly when it has one, on
+        # the corpus, the samples and the files written above.
+        run: |
+          "$(swift build -c release --show-bin-path)/mppdump" check Corpus/*.mpp Samples/*.mpp out/*.mpp
+      - name: Compare with MPXJ on Project-saved files
+        # Fails on a difference not in Tools/ci/corpus-known-differences.txt.
+        run: Tools/ci/corpus-oracle.sh Corpus/*.mpp
       - name: Keep written files
         if: failure()
         uses: actions/upload-artifact@v7

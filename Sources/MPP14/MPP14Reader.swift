@@ -72,9 +72,8 @@ public final class MPP14File {
     /// the field map and block streams that describe its records.
     final class EntityClass {
         let fieldMap: [UInt32: MPP.FieldItem]
-        /// native field id -> its position in the field map, which is the bit
-        /// index used by the meta bitmaps.
-        let bitIndex: [UInt32: Int]
+        /// native field id -> its bit in the meta bitmaps.
+        let bitIndex: [UInt32: MPP.MetaBit]
         var records: [[UInt8]] = []
         var metas: [[UInt8]] = []
         var records2: [[UInt8]] = []
@@ -85,17 +84,10 @@ public final class MPP14File {
         init(root: CFBStorage, storage: String, metaSize: Int, meta2Size: Int,
              propsKey: UInt32, props: MPP.PropsStream) {
             var fm: [UInt32: MPP.FieldItem] = [:]
-            var bits: [UInt32: Int] = [:]
-            if let raw = props[propsKey] {
-                for (i, item) in MPP.parseFieldMap(raw).enumerated() {
-                    // The low 16 bits index the native field enumeration.
-                    let native = item.typeValue & 0xFFFF
-                    if item.inFixed, fm[native] == nil { fm[native] = item }
-                    if bits[native] == nil { bits[native] = i }
-                }
-            }
+            let items = props[propsKey].map(MPP.parseFieldMap) ?? []
+            for item in items where item.inFixed && fm[item.nativeID] == nil { fm[item.nativeID] = item }
             self.fieldMap = fm
-            self.bitIndex = bits
+            self.bitIndex = MPP.metaBits(items)
 
             if let meta = try? root.stream(path: "\(storage)/FixedMeta"),
                let data = try? root.stream(path: "\(storage)/FixedData"),
@@ -159,7 +151,7 @@ public final class MPP14File {
         func flag(_ i: Int, _ id: UInt32) -> Bool {
             guard let idx = bitIndex[id], i < metas.count else { return false }
             let meta2 = i < metas2.count ? metas2[i] : []
-            return (MPP.metaBit(meta: metas[i], meta2: meta2, entryIndex: idx) ?? 0) != 0
+            return (MPP.metaBit(meta: metas[i], meta2: meta2, idx) ?? 0) != 0
         }
 
         func varBytes(_ uid: Int, _ id: UInt32) -> [UInt8]? {
@@ -173,16 +165,11 @@ public final class MPP14File {
         }
     }
 
-    private func classMap(_ propsKey: UInt32) -> (fm: [UInt32: MPP.FieldItem], bits: [UInt32: Int]) {
+    private func classMap(_ propsKey: UInt32) -> (fm: [UInt32: MPP.FieldItem], bits: [UInt32: MPP.MetaBit]) {
         var fm: [UInt32: MPP.FieldItem] = [:]
-        var bits: [UInt32: Int] = [:]
-        guard let raw = props[propsKey] else { return (fm, bits) }
-        for (i, item) in MPP.parseFieldMap(raw).enumerated() {
-            let native = item.typeValue & 0xFFFF
-            if item.inFixed, fm[native] == nil { fm[native] = item }
-            if bits[native] == nil { bits[native] = i }
-        }
-        return (fm, bits)
+        let items = props[propsKey].map(MPP.parseFieldMap) ?? []
+        for item in items where item.inFixed && fm[item.nativeID] == nil { fm[item.nativeID] = item }
+        return (fm, MPP.metaBits(items))
     }
 
     // MARK: - Reading

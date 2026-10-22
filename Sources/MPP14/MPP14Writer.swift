@@ -143,7 +143,7 @@ private struct Row {
 private struct Editor {
     var row: Row
     let fm: [UInt32: MPP.FieldItem]
-    let bits: [UInt32: Int]
+    let bits: [UInt32: MPP.MetaBit]
 
     mutating func put(_ id: UInt32, _ value: [UInt8]) {
         guard let it = fm[id] else { return }
@@ -172,9 +172,17 @@ private struct Editor {
     mutating func bit(_ id: UInt32, _ v: Bool) {
         guard let i = bits[id] else { return }
         if fm[id] != nil && !v { return }
-        MPP.setMetaBit(meta: &row.meta, meta2: &row.meta2, entryIndex: i, value: v)
+        MPP.setMetaBit(meta: &row.meta, meta2: &row.meta2, i, value: v)
     }
     func has(_ id: UInt32) -> Bool { fm[id] != nil }
+    /// Make the var-data presence bits say exactly which entries the record
+    /// has: a bit cloned from the prototype for a field it no longer carries
+    /// would have Project look for a value that is not there.
+    mutating func varBits(_ written: Set<UInt32>) {
+        for (id, b) in bits where b.varData {
+            MPP.setMetaBit(meta: &row.meta, meta2: &row.meta2, b, value: written.contains(id))
+        }
+    }
 }
 
 private func le<T: FixedWidthInteger>(_ v: T) -> [UInt8] {
@@ -210,9 +218,9 @@ private final class Session {
     let root: CFBStorage
     var props: MPP.PropsStream
     let options: MPP14Writer.Options
-    let taskMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: Int])
-    let rscMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: Int])
-    let assnMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: Int])
+    let taskMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: MPP.MetaBit])
+    let rscMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: MPP.MetaBit])
+    let assnMap: (fm: [UInt32: MPP.FieldItem], bits: [UInt32: MPP.MetaBit])
     let relation2010: Bool
     let templateStart: [UInt8]?
     let templateStandard: ProjectCalendar?
@@ -222,13 +230,11 @@ private final class Session {
         root = file.root
         props = file.props
         self.options = options
-        func map(_ key: UInt32) -> ([UInt32: MPP.FieldItem], [UInt32: Int]) {
-            var fm: [UInt32: MPP.FieldItem] = [:], bits: [UInt32: Int] = [:]
-            for (i, item) in MPP.parseFieldMap(file.props[key] ?? []).enumerated() {
-                if item.inFixed, fm[item.nativeID] == nil { fm[item.nativeID] = item }
-                if bits[item.nativeID] == nil { bits[item.nativeID] = i }
-            }
-            return (fm, bits)
+        func map(_ key: UInt32) -> ([UInt32: MPP.FieldItem], [UInt32: MPP.MetaBit]) {
+            var fm: [UInt32: MPP.FieldItem] = [:]
+            let items = MPP.parseFieldMap(file.props[key] ?? [])
+            for item in items where item.inFixed && fm[item.nativeID] == nil { fm[item.nativeID] = item }
+            return (fm, MPP.metaBits(items))
         }
         taskMap = map(MPP.PropsKey.taskFieldMap)
         rscMap = map(MPP.PropsKey.resourceFieldMap)
@@ -606,6 +612,7 @@ private final class Session {
             for (field, _) in extra { e.bit(field, true) }
             var vars = proto.vars.map { ($0.field, $0.field == F.name ? MPP.encodeUnicode(name) : $0.payload) }
             vars.append(contentsOf: extra)
+            e.varBits(Set(vars.map(\.0)))
             if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: vars.count) }
             taskRows.append(e.row)
             for (field, payload) in vars { taskVars.append((uid, field, payload)) }
@@ -726,6 +733,7 @@ private final class Session {
             e.put(RF.calendarGUID, res.guid)
             for f in [RF.uniqueID, RF.id, RF.name, RF.maxUnits] { e.bit(f, true) }
             for (field, _) in extra { e.bit(field, true) }
+            e.varBits(Set(rscProtoVars.map(\.field) + extra.map(\.0)))
             if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: rscProtoVars.count + extra.count) }
             rscRows.append(e.row)
             for v in rscProtoVars { rscVars.append((res.uid, v.field, v.payload)) }
@@ -778,9 +786,14 @@ private final class Session {
         if let s = project.currencyCode, props.values[MPP.PropsKey.currencyCode] != nil {
             props.values[MPP.PropsKey.currencyCode] = MPP.encodeUnicode(s)
         }
-        if props.values[MPP.PropsKey.baselineSaved] != nil {
-            let has = project.tasks.contains { !$0.baselines.isEmpty }
-            props.values[MPP.PropsKey.baselineSaved] = MPP.encodeTimestamp(has ? now : nil)
+        // When each of Baseline...Baseline10 was saved, as Set Baseline
+        // records it. Project shows a slot without one too (baselines typed in
+        // by hand have none); this is the date its dialogs report.
+        for slot in 0...10 {
+            let key = MPP.PropsKey.baselineSaved + UInt32(slot)
+            guard props.values[key] != nil else { continue }
+            let has = project.tasks.contains { $0.baselines[slot] != nil }
+            props.values[key] = MPP.encodeTimestamp(has ? now : nil)
         }
         if props.values[MPP.PropsKey.minutesPerDay] != nil {
             props.values[MPP.PropsKey.minutesPerDay] = le(UInt32(project.minutesPerDay))
@@ -938,7 +951,7 @@ private final class Session {
 
         func flag(_ row: Row, _ id: UInt32) -> Bool {
             guard let bit = taskMap.bits[id] else { return false }
-            return (MPP.metaBit(meta: row.meta, meta2: row.meta2, entryIndex: bit) ?? 0) != 0
+            return (MPP.metaBit(meta: row.meta, meta2: row.meta2, bit) ?? 0) != 0
         }
         func value(_ row: Row, _ id: UInt32) -> UInt32 {
             guard let it = taskMap.fm[id] else { return 0 }
@@ -1004,7 +1017,7 @@ private final class Session {
         // finished flags, which would be cloned onto every assignment.
         func unstarted(_ row: Row) -> Bool {
             for id in [A.started, A.finished] {
-                if let i = assnMap.bits[id], MPP.metaBit(meta: row.meta, meta2: row.meta2, entryIndex: i) == 1 { return false }
+                if let i = assnMap.bits[id], MPP.metaBit(meta: row.meta, meta2: row.meta2, i) == 1 { return false }
             }
             let work = assnMap.fm[A.actualWork].flatMap { w in
                 BinaryReader(w.block == 0 ? row.rec : row.rec2).f64(at: w.offset) } ?? 0
@@ -1135,6 +1148,7 @@ private final class Session {
                 for (field, _) in entries { e.bit(field, true) }
                 out.append(contentsOf: entries)
             }
+            e.varBits(Set(out.map(\.0)))
             if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: out.count) }
             rows.append(e.row)
             for (field, payload) in out { vars.append((uid, field, payload)) }

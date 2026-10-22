@@ -212,6 +212,8 @@ swift run mppdump xml       <file.mpp> <out.xml>   # Microsoft Project XML
 swift run mppdump schedcheck <file.mpp>  # MPPKit's schedule vs Project's saved one
 swift run mppdump schedbench <file.mpp|synth5000>  # scheduler timing
 swift run mppdump synthfile <template.mpp> <out.mpp> 5000   # a large test plan
+swift run mppdump check     <file.mpp>...  # the rules Project's own files keep
+swift run mppdump fixbits   <in.mpp> <out.mpp>   # repair meta bits, nothing else
 ```
 
 `tree`, `props` and `fieldmap` are how a **new** Project release gets diagnosed:
@@ -240,6 +242,22 @@ against MPXJ's, field by field. It needs a JRE and a venv with
 `pip install mpxj jpype1`; see the script header. MPXJ is LGPL and runs only as
 an external tool here — it is never linked.
 
+### Files Microsoft Project saved
+
+A round trip through MPPKit cannot show a rule that the reader and the writer
+both get wrong, and the samples were written by MPPKit. `Tools/ci/fetch-corpus.sh`
+downloads the 36 Project 2010 and 2013 files from MPXJ's test corpus, at a
+pinned commit, into `Corpus/`. Against them:
+
+- `ConformanceTests` and `mppdump check` hold the corpus, the samples and what
+  the writer produces to the rules Project's files keep
+  (`MPP14File.conformanceIssues`): today, that a var-data field's meta bit is
+  set exactly when the record has a value for it. Project shows a value whose
+  bit is clear as empty.
+- `Tools/ci/corpus-oracle.sh` runs the MPXJ oracle on the corpus and fails on
+  any difference not listed in `Tools/ci/corpus-known-differences.txt`. Each
+  listed line is an open reader question; remove it once resolved.
+
 ### Continuous integration
 
 Every pull request and every push to `main` runs, on GitHub's macOS runners:
@@ -251,6 +269,9 @@ Every pull request and every push to `main` runs, on GitHub's macOS runners:
 - the MPXJ oracle on every sample and on files the writer produces in the same
   run (the feature sample, a blank template and a 500-task synthetic plan),
   failing on any difference;
+- the Project-saved corpus: `ConformanceTests` in every test run, `mppdump
+  check` on the corpus, the samples and the written files, and the MPXJ oracle
+  on the corpus against its list of known differences;
 - a licence-header check and CodeQL.
 
 `main` only accepts pull requests whose checks all pass. Pushing a version tag
