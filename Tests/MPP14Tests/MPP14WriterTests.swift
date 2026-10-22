@@ -589,6 +589,23 @@ final class ExtraBaselinesTests: XCTestCase {
         for t in seen.tasks { XCTAssertEqual(t.baselines.keys.sorted(), Array(0...10), "task \(t.uid)") }
     }
 
+    /// Baselines saved one at a time, each after a save and reopen, as in
+    /// use: the stream appears with the twelfth and grows with each one after,
+    /// with no upper limit.
+    func testBaselinesAddedOneAtATime() throws {
+        let template = try blankTemplate()
+        var p = project(slots: 0..<0)
+        for n in 1...30 {
+            let slot = p.nextBaselineSlot
+            XCTAssertEqual(slot, n - 1)
+            p.setBaseline(slot: slot)
+            let file = try MPP14File(bytes: try MPP14Writer(template: template).build(p))
+            XCTAssertEqual((try? file.root.stream(MPP.extraBaselinesStream)) != nil, n > 11, "after \(n) baselines")
+            p = try file.readProject()
+            XCTAssertEqual(p.tasks.map { $0.baselines.count }.min(), n, "after \(n) baselines")
+        }
+    }
+
     /// Eleven or fewer: no stream, so the file is what it was before.
     func testNoStreamWithoutExtraSlots() throws {
         let bytes = try MPP14Writer(template: try blankTemplate()).build(project(slots: 0..<11))

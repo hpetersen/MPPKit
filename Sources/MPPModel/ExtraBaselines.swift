@@ -73,6 +73,16 @@ public struct ExtraBaselines: Codable, Equatable, Sendable {
     }
 }
 
+extension Project {
+    /// The first slot no task has a baseline in: where the next Set Baseline
+    /// goes when baselines are kept one after another. Past 10 it is one of
+    /// the app's own slots, which have no upper limit.
+    public var nextBaselineSlot: Int {
+        let used = Set(tasks.flatMap(\.baselines.keys))
+        return (0...).first { !used.contains($0) }!
+    }
+}
+
 extension [Int: Baseline] {
     /// Only the slots Project has fields for.
     public var projectSlots: [Int: Baseline] { filter { ExtraBaselines.projectSlots.contains($0.key) } }
