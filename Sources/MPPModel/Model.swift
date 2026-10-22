@@ -111,7 +111,7 @@ public enum MPPTime {
 // MARK: - Project model
 
 /// One saved snapshot of a task's schedule. Slot 0 is `Baseline`, 1...10 are
-/// `Baseline1`...`Baseline10`.
+/// `Baseline1`...`Baseline10`; 11 and up are the app's own (`ExtraBaselines`).
 public struct Baseline: Equatable, Sendable {
     public var start: Date?
     public var finish: Date?

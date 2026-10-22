@@ -112,6 +112,11 @@ public final class CFBStorage {
         return s
     }
 
+    public func removeChild(_ name: String) {
+        guard children.removeValue(forKey: name) != nil else { return }
+        order.removeAll { $0 == name }
+    }
+
     /// Create every intermediate storage and set the trailing component as a stream.
     public func setStream(path: String, _ data: [UInt8]) {
         let parts = path.split(separator: "/").map(String.init)

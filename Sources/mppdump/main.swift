@@ -32,6 +32,7 @@ func usage() {
       mppdump template <project.mpp> <out.mpp>
       mppdump check <file.mpp>...
       mppdump fixbits <in.mpp> <out.mpp>
+      mppdump baselines <template.mpp> <out.mpp> [count]
 
     COMMANDS
       tree        container tree: every storage and stream with its size
@@ -47,6 +48,8 @@ func usage() {
                   file as the template (its user data is neutralised first)
       template    turn any Project-saved file into a clean writer template: no
                   user data, a summary task over two linked tasks
+      baselines   the sample with [count] baselines (default 50), slot n moved n
+                  weeks earlier; slots past 10 go to the app's own stream
       json        the whole parsed project as JSON
       check       the rules every Project-saved file keeps (meta bits); lists
                   what breaks them, exits 1 if anything does
@@ -194,6 +197,43 @@ if command == "sample" || command == "template" {
         print("wrote \(args[3]): \(project.tasks.count) tasks, \(project.relations.count) links, "
               + "\(project.resources.count) resources, \(project.assignments.count) assignments, "
               + "\(project.calendars.count + 1) base calendars")
+        exit(0)
+    } catch {
+        fail("\(error)")
+    }
+}
+
+// Experimental: the sample with `count` baselines (default 50), slot n moved
+// n weeks earlier so each is told apart. Slots 0...10 go to Project's fields,
+// the rest to the app's own stream.
+if command == "baselines" {
+    guard args.count >= 4 else { usage(); exit(2) }
+    do {
+        let source = [UInt8](try Data(contentsOf: URL(fileURLWithPath: path)))
+        let count = args.count >= 5 ? Int(args[4]) ?? 50 : 50
+        var project = SampleProject.make()
+        project.title = "MPPKit \(count) baselines"
+        for i in project.tasks.indices { project.tasks[i].baselines = [:] }
+        for i in project.assignments.indices { project.assignments[i].baselines = [:] }
+        for slot in 0..<count {
+            project.setBaseline(slot: slot)
+            let shift = TimeInterval(-7 * 86_400 * slot)
+            func moved(_ b: Baseline) -> Baseline {
+                var b = b
+                b.start = b.start?.addingTimeInterval(shift)
+                b.finish = b.finish?.addingTimeInterval(shift)
+                return b
+            }
+            for i in project.tasks.indices { project.tasks[i].baselines[slot] = project.tasks[i].baselines[slot].map(moved) }
+            for i in project.assignments.indices {
+                project.assignments[i].baselines[slot] = project.assignments[i].baselines[slot].map(moved)
+            }
+        }
+        let writer = try MPP14Writer(template: try MPP14Template.neutralized(source))
+        try writer.write(project, to: URL(fileURLWithPath: args[3]))
+        let back = try MPP14File(path: args[3]).readProject()
+        print("wrote \(args[3]): \(project.tasks.count) tasks with \(count) baselines; "
+              + "read back \(back.tasks.map(\.baselines.count).max() ?? 0)")
         exit(0)
     } catch {
         fail("\(error)")

@@ -331,6 +331,10 @@ public enum MPP {
     /// JSON keyed by calendar name (`CalendarSetup`).
     public static let calendarSetupStream = "ProjectsCalendars"
 
+    /// A root stream of our own: baseline slots 11 and up, which Project has
+    /// no fields for, as JSON (`ExtraBaselines`).
+    public static let extraBaselinesStream = "ProjectsBaselines"
+
     /// The Entry table (table 1, the Gantt Chart's) as Project stores it:
     /// `   214/CTable`, Var2Data field 6 per table — a 12-byte header (table
     /// id, `u16` column count − 1, …) then one 115-byte record per column:

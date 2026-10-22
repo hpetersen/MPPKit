@@ -118,7 +118,7 @@ public enum MSPDI {
                 x.leaf("Value", v)
                 x.close("ExtendedAttribute")
             }
-            for (n, b) in t.baselines.sorted(by: { $0.key < $1.key }) {
+            for (n, b) in t.baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 x.open("Baseline")
                 x.leaf("Number", "\(n)")
                 if let s = b.start { x.leaf("Start", date(s)) }

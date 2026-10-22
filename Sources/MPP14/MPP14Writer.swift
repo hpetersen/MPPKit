@@ -592,7 +592,7 @@ private final class Session {
             for (n, id) in MPP.CustomField.flag.enumerated() {
                 e.bit(id, task?.flags[n + 1] ?? false)
             }
-            for (slot, b) in baselines.sorted(by: { $0.key < $1.key }) {
+            for (slot, b) in baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 extra.append((MPP14File.taskBaselineStart[slot], MPP.encodeTimestamp(b.start)))
                 extra.append((MPP14File.taskBaselineFinish[slot], MPP.encodeTimestamp(b.finish)))
                 extra.append((MPP14File.taskBaselineDuration[slot],
@@ -620,7 +620,7 @@ private final class Session {
 
         // Summary baselines span the tasks' own.
         var summaryBaselines: [Int: Baseline] = [:]
-        for slot in Set(project.tasks.flatMap { $0.baselines.keys }).sorted() {
+        for slot in Set(project.tasks.flatMap { $0.baselines.projectSlots.keys }).sorted() {
             let rows = project.tasks.compactMap { $0.baselines[slot] }
             guard let s0 = rows.compactMap(\.start).min(), let f0 = rows.compactMap(\.finish).max() else { continue }
             summaryBaselines[slot] = Baseline(
@@ -715,7 +715,7 @@ private final class Session {
             var extra: [(UInt32, [UInt8])] = [(RF.name, MPP.encodeUnicode(res.name))]
             if !res.initials.isEmpty { extra.append((RF.initials, MPP.encodeUnicode(res.initials))) }
             if !res.email.isEmpty { extra.append((RF.emailAddress, MPP.encodeUnicode(res.email))) }
-            for (slot, b) in res.baselines.sorted(by: { $0.key < $1.key }) {
+            for (slot, b) in res.baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 extra.append((MPP14File.resourceBaselineWork[slot], le(b.workHours * 600 * W.workScale)))
                 extra.append((MPP14File.resourceBaselineCost[slot], le(b.cost)))
                 if slot < W.Rsc.baselineBudget.count {
@@ -789,7 +789,7 @@ private final class Session {
         // When each of Baseline...Baseline10 was saved, as Set Baseline
         // records it. Project shows a slot without one too (baselines typed in
         // by hand have none); this is the date its dialogs report.
-        for slot in 0...10 {
+        for slot in ExtraBaselines.projectSlots {
             let key = MPP.PropsKey.baselineSaved + UInt32(slot)
             guard props.values[key] != nil else { continue }
             let has = project.tasks.contains { $0.baselines[slot] != nil }
@@ -842,6 +842,14 @@ private final class Session {
         if let bytes = CalendarSetup.encode(setups) {
             root.addStream(MPP.calendarSetupStream, bytes)
         }
+        // Baselines past Project's eleven; removed when there are none, so a
+        // template's own stream never brings old ones back.
+        let extras = ExtraBaselines(project)
+        if !extras.isEmpty, let bytes = extras.encode() {
+            root.addStream(MPP.extraBaselinesStream, bytes)
+        } else {
+            root.removeChild(MPP.extraBaselinesStream)
+        }
 
         return try CFBWriter.write(root: root, rootCLSID: CFBFile.projectRootCLSID)
     }
@@ -869,7 +877,7 @@ private final class Session {
                     throw fail("task \(t.uid): \(label)\(bad) out of range 1...\(limit)")
                 }
             }
-            if t.baselines.keys.contains(where: { !(0...10).contains($0) }) { throw fail("task \(t.uid): baseline slot out of range") }
+            if t.baselines.keys.contains(where: { $0 < 0 }) { throw fail("task \(t.uid): baseline slot out of range") }
         }
         // Row-order outline: a level may rise by one at most, and the parent
         // must be the nearest preceding task one level up.
@@ -1134,7 +1142,7 @@ private final class Session {
             out.append((665, [UInt8](repeating: 0, count: 16)))
             if empty { out.append((667, [UInt8](repeating: 0, count: 16))) }
             let baselines = spec.baselines ?? task.baselines
-            for (slot, b) in baselines.sorted(by: { $0.key < $1.key }) {
+            for (slot, b) in baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 var entries: [(UInt32, [UInt8])] = [
                     (MPP14File.assignmentBaselineStart[slot], MPP.encodeTimestamp(b.start)),
                     (MPP14File.assignmentBaselineFinish[slot], MPP.encodeTimestamp(b.finish)),

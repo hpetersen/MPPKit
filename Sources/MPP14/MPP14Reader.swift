@@ -258,6 +258,10 @@ public final class MPP14File {
             project.statusDate = MPP.decodeTimestamp(raw, offset: 0)
         }
         Self.applyDocumentProperties(to: &project, root: root)
+        // Baselines past Project's eleven, kept by the app.
+        if let bytes = try? root.stream(MPP.extraBaselinesStream) {
+            ExtraBaselines.decode(bytes).apply(to: &project)
+        }
         // The columns: Project's Entry table is the truth both ways. The
         // app's own list — which also keeps widths and columns Project's
         // table cannot hold — is used while it still agrees with that table,

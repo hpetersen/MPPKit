@@ -536,3 +536,62 @@ final class MPP14WriterTests: XCTestCase {
         return out
     }
 }
+
+/// Baselines past Project's eleven: slots 0...10 in Project's own fields, the
+/// rest in the app's stream. Uses the committed blank template, so it runs
+/// without a fixture.
+final class ExtraBaselinesTests: XCTestCase {
+
+    private func blankTemplate() throws -> [UInt8] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Samples/Blank-Template.mpp")
+        return [UInt8](try Data(contentsOf: url))
+    }
+
+    private func project(slots: Range<Int>) -> Project {
+        var p = SampleProject.make()
+        for i in p.tasks.indices { p.tasks[i].baselines = [:] }
+        for i in p.assignments.indices { p.assignments[i].baselines = [:] }
+        for slot in slots {
+            p.setBaseline(slot: slot)
+            for i in p.tasks.indices {
+                let start = p.tasks[i].start?.addingTimeInterval(TimeInterval(-86_400 * slot))
+                p.tasks[i].baselines[slot]?.start = start
+            }
+        }
+        return p
+    }
+
+    func testFiftyBaselinesRoundTrip() throws {
+        let expected = project(slots: 0..<50)
+        let bytes = try MPP14Writer(template: try blankTemplate()).build(expected)
+        let actual = try MPP14File(bytes: bytes).readProject()
+        for (a, e) in zip(actual.tasks, expected.tasks) {
+            XCTAssertEqual(a.baselines.keys.sorted(), Array(0..<50), "task \(e.uid)")
+            for slot in 0..<50 {
+                XCTAssertEqual(a.baselines[slot]?.start, e.baselines[slot]?.start, "task \(e.uid) slot \(slot)")
+            }
+        }
+        for (a, e) in zip(actual.assignments, expected.assignments) {
+            XCTAssertEqual(a.baselines.keys.sorted(), e.baselines.keys.sorted())
+        }
+    }
+
+    /// What Project sees: the file without the app's stream holds exactly
+    /// Baseline...Baseline10.
+    func testProjectSeesOnlyItsElevenSlots() throws {
+        let bytes = try MPP14Writer(template: try blankTemplate()).build(project(slots: 0..<50))
+        let file = try MPP14File(bytes: bytes)
+        XCTAssertNotNil(try? file.root.stream(MPP.extraBaselinesStream))
+        file.root.removeChild(MPP.extraBaselinesStream)
+        let seen = try file.readProject()
+        for t in seen.tasks { XCTAssertEqual(t.baselines.keys.sorted(), Array(0...10), "task \(t.uid)") }
+    }
+
+    /// Eleven or fewer: no stream, so the file is what it was before.
+    func testNoStreamWithoutExtraSlots() throws {
+        let bytes = try MPP14Writer(template: try blankTemplate()).build(project(slots: 0..<11))
+        XCTAssertNil(try? MPP14File(bytes: bytes).root.stream(MPP.extraBaselinesStream))
+    }
+}
