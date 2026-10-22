@@ -778,9 +778,14 @@ private final class Session {
         if let s = project.currencyCode, props.values[MPP.PropsKey.currencyCode] != nil {
             props.values[MPP.PropsKey.currencyCode] = MPP.encodeUnicode(s)
         }
-        if props.values[MPP.PropsKey.baselineSaved] != nil {
-            let has = project.tasks.contains { !$0.baselines.isEmpty }
-            props.values[MPP.PropsKey.baselineSaved] = MPP.encodeTimestamp(has ? now : nil)
+        // When each of Baseline...Baseline10 was saved, as Set Baseline
+        // records it. Project shows a slot without one too (baselines typed in
+        // by hand have none); this is the date its dialogs report.
+        for slot in 0...10 {
+            let key = MPP.PropsKey.baselineSaved + UInt32(slot)
+            guard props.values[key] != nil else { continue }
+            let has = project.tasks.contains { $0.baselines[slot] != nil }
+            props.values[key] = MPP.encodeTimestamp(has ? now : nil)
         }
         if props.values[MPP.PropsKey.minutesPerDay] != nil {
             props.values[MPP.PropsKey.minutesPerDay] = le(UInt32(project.minutesPerDay))

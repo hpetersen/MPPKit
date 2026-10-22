@@ -53,7 +53,8 @@ public enum MPP {
         public static let defaultFinishTime: UInt32 = 37_748_769
         /// `u16`.
         public static let daysPerMonth: UInt32 = 37_753_743
-        /// When the baseline was last saved; NA once it is cleared.
+        /// When the baseline was last saved; NA once it is cleared. The next ten
+        /// keys are Baseline1...Baseline10's.
         public static let baselineSaved: UInt32 = 37_753_749
         /// 2010-era only; stale values make Project renumber task uids.
         public static let legacyNextUIDs: UInt32 = 37_748_910
