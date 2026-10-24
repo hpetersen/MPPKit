@@ -11,7 +11,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Reader for OLE property sets ([MS-OLEPS]), the format behind a compound
 /// file's `\x05SummaryInformation` and `\x05DocumentSummaryInformation` streams.

@@ -11,7 +11,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// A critical-path scheduler: the subset of Project's own scheduling needed
 /// to give every task the dates Project gives it when it recalculates.

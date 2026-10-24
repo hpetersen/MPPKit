@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// The scheduler's dependency graph, built once and searched many times.
 ///
@@ -56,6 +60,23 @@ public struct DependencyGraph: Sendable {
     public func wouldLoop(pred: Int, succ: Int) -> Bool {
         guard let p = index[pred], let s = index[succ] else { return false }
         return search(from: [2 * s + 1], target: 2 * p)
+    }
+
+    /// Every task that linking it as a predecessor of `succ` would loop
+    /// back to: all that the work bound by such a link already leads to. One
+    /// search, for offering only the valid choices in a list.
+    public func loopingPredecessors(of succ: Int) -> Set<Int> {
+        guard let s = index[succ] else { return [] }
+        var seen = [Bool](repeating: false, count: edges.count)
+        var stack = [2 * s + 1]
+        while let u = stack.popLast() {
+            if seen[u] { continue }
+            seen[u] = true
+            for v in edges[u] where !seen[Int(v)] { stack.append(Int(v)) }
+        }
+        var uids = Set<Int>()
+        for (uid, i) in index where seen[2 * i] { uids.insert(uid) }
+        return uids
     }
 
     private func search(from starts: [Int], target: Int) -> Bool {

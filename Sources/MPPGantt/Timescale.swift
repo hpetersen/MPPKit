@@ -8,7 +8,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+// Labels need localized date formatting (full Foundation): not in the
+// WebAssembly build, which labels its timescale in the browser.
+#if !os(WASI)
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import MPPModel
 
 /// The two-tier timescale above a Gantt chart, adapted to the zoom.
@@ -106,3 +113,5 @@ public struct Timescale: Sendable {
         }
     }
 }
+
+#endif

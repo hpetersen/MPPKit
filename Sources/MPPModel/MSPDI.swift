@@ -8,7 +8,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+// Microsoft Project XML needs full Foundation (DateFormatter, XMLParser):
+// not in the WebAssembly build.
+#if !os(WASI)
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -480,3 +487,5 @@ final class XMLTree {
         }
     }
 }
+
+#endif

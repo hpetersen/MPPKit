@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 public enum CFBError: Error, CustomStringConvertible {
     case notCompoundFile
@@ -24,7 +28,8 @@ public enum CFBError: Error, CustomStringConvertible {
         case .notCompoundFile:
             return "not a compound file (bad signature)"
         case .unsupportedByteOrder(let v):
-            return String(format: "unsupported byte-order mark 0x%04X", v)
+            let hex = String(v, radix: 16, uppercase: true)
+            return "unsupported byte-order mark 0x" + String(repeating: "0", count: max(0, 4 - hex.count)) + hex
         case .unsupportedSectorShift(let v):
             return "unsupported sector shift \(v)"
         case .truncated(let what):

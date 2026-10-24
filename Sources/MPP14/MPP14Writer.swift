@@ -11,7 +11,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import MPPCFB
 import MPPModel
 
@@ -67,7 +71,12 @@ public final class MPP14Writer {
     }
 
     public func write(_ project: Project, to url: URL) throws {
+        #if os(WASI)
+        // No temporary files in WASI: written in place.
+        try Data(try build(project)).write(to: url)
+        #else
         try Data(try build(project)).write(to: url, options: .atomic)
+        #endif
     }
 
     /// The complete `.mpp` file for `project`.

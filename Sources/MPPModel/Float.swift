@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Total float (Project's Total Slack) and the critical path, in working time.
 ///

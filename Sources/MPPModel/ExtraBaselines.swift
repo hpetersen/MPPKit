@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Baselines past the eleven Project has fields for. Project stores each slot
 /// in its own fixed field ids (`Baseline` and `Baseline1`...`Baseline10`) and
