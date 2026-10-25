@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 // Public holidays by country, kept as rules rather than dates: one Christmas,
 // one Easter. The dates are worked out for whichever years a plan covers and

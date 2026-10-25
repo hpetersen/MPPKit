@@ -11,7 +11,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// A critical-path scheduler: the subset of Project's own scheduling needed
 /// to give every task the dates Project gives it when it recalculates.
@@ -335,7 +339,7 @@ public enum Scheduler {
 
 extension Project {
     /// Save the current schedule into baseline `slot` (0 is `Baseline`, 1...10
-    /// are `Baseline1`...`Baseline10`), as Project's Set Baseline does: start,
+    /// are `Baseline1`...`Baseline10`, 11 and up the app's own), as Project's Set Baseline does: start,
     /// finish, duration and work per task, summaries spanning their children
     /// and work rolled up from assignments; assignments get the same snapshot
     /// without a duration, and resources the work their assignments add up to.
@@ -355,7 +359,7 @@ extension Project {
     }
 
     public mutating func setBaseline(slot: Int = 0) {
-        precondition((0...10).contains(slot), "baseline slot must be 0...10")
+        precondition(slot >= 0, "baseline slot must be >= 0")
         let hoursPerDay = Double(minutesPerDay) / 60
         var children: [Int: [Int]] = [:]
         for t in tasks { children[t.parentUID, default: []].append(t.uid) }

@@ -196,6 +196,14 @@ final class SchedulingTests: XCTestCase {
         XCTAssertFalse(g.wouldLoop(pred: 12, succ: 20))
         XCTAssertTrue(g.reaches(from: 11, to: 20))
         XCTAssertTrue(g.reaches(from: 11, to: 10))   // the phase waits for its tasks
+        // In one search, the same answers as asking `wouldLoop` of each.
+        for succ in [10, 11, 12, 20] {
+            let looping = g.loopingPredecessors(of: succ)
+            for pred in [10, 11, 12, 20] where pred != succ {
+                XCTAssertEqual(looping.contains(pred), g.wouldLoop(pred: pred, succ: succ), "\(pred) → \(succ)")
+            }
+        }
+        XCTAssertTrue(g.loopingPredecessors(of: 11).contains(10))   // its own phase
     }
 
     // MARK: Edits that must not move dates

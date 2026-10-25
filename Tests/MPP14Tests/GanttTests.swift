@@ -86,6 +86,19 @@ final class GanttTests: XCTestCase {
         XCTAssertTrue(layout.nonWorking.contains { $0.contains(newYear + 600) })
         let monday = layout.x(MPPTime.date(2026, 1, 5))
         XCTAssertFalse(layout.nonWorking.contains { $0.contains(monday + 600) })
+        // Past the plan's range the ordinary week carries on, so the bands
+        // fill a chart scrolled or zoomed out beyond it.
+        // A Monday a month past the end (the epoch is a Monday).
+        let beyond = ((layout.nonWorkingEnd / 1_440 / 7).rounded(.up) + 4) * 7 * 1_440
+        let far = layout.nonWorking(in: beyond..<(beyond + 14 * 1_440))
+        XCTAssertEqual(far.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }, 4 * 1_440, accuracy: 1e-6,
+                       "two weekends in any fortnight")
+        for span in far {
+            let weekday = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(secondsFromGMT: 0)!,
+                from: layout.epoch.addingTimeInterval(span.lowerBound * 60 + 600)).weekday!
+            XCTAssertEqual(weekday, 7, "a weekend starts on a Saturday")
+        }
+        XCTAssertEqual(layout.nonWorking(in: 0..<layout.nonWorkingEnd), layout.nonWorking)
         // Bars and links are found where they are drawn.
         let backend = byUID[13]!
         let found = layout.index.query(Rect(minX: backend.start + 10, minY: Double(backend.index) + 0.5,

@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Structural edits, keeping the outline consistent: tasks stay in outline
 /// (row) order, every `parentUID` matches the nearest preceding task one level

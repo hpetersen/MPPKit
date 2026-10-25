@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Resource loading: how much work each person is carrying, week by week.
 ///
@@ -42,7 +46,11 @@ public extension Project {
         let finishes = assignments.compactMap { byUID[$0.taskUID]?.finish }
         guard let first = starts.min(), let last = finishes.max() else { return [] }
 
-        let calendar = Calendar(identifier: .gregorian)
+        // Wall-clock dates are stored as UTC; weeks start on Monday (ISO 8601),
+        // so the load is the same on every device, whatever its region.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.firstWeekday = 2
         var week = calendar.dateInterval(of: .weekOfYear, for: first)?.start ?? first
         var out: [Double] = []
         while week <= last, out.count < limit {

@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// An axis-aligned rectangle in world coordinates.
 public struct Rect: Sendable, Equatable {

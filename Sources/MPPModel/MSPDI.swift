@@ -8,7 +8,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+// Microsoft Project XML needs full Foundation (DateFormatter, XMLParser):
+// not in the WebAssembly build.
+#if !os(WASI)
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -118,7 +125,7 @@ public enum MSPDI {
                 x.leaf("Value", v)
                 x.close("ExtendedAttribute")
             }
-            for (n, b) in t.baselines.sorted(by: { $0.key < $1.key }) {
+            for (n, b) in t.baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 x.open("Baseline")
                 x.leaf("Number", "\(n)")
                 if let s = b.start { x.leaf("Start", date(s)) }
@@ -480,3 +487,5 @@ final class XMLTree {
         }
     }
 }
+
+#endif

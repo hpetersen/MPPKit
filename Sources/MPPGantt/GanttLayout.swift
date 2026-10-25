@@ -8,7 +8,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import MPPModel
 
 /// The geometry of a Gantt chart, independent of how it is drawn.
@@ -66,11 +70,43 @@ public struct GanttLayout: Sendable {
     /// Whole non-working days (weekends, holidays) of the project calendar
     /// over the chart's range, as world x ranges.
     public let nonWorking: [Range<Double>]
+    /// Where `nonWorking` stops. Past it the chart can still be scrolled or
+    /// zoomed out to, and there the calendar's ordinary week carries on.
+    public let nonWorkingEnd: Double
+    /// The ordinary week, from the epoch's Monday: whether each of its seven
+    /// days is off.
+    public let weekOff: [Bool]
     /// The chart's horizontal extent: the project with a margin.
     public let range: Range<Double>
     public let index: SpatialIndex<Item>
     /// uid -> row.
     public let rowOfTask: [Int: Int]
+
+    /// The non-working days overlapping `visible`: the plan's own (holidays
+    /// included) over its range, and the ordinary week beyond it, so the bands
+    /// reach every edge the chart can show.
+    public func nonWorking(in visible: Range<Double>) -> [Range<Double>] {
+        var out: [Range<Double>] = []
+        var lo = 0, hi = nonWorking.count
+        while lo < hi { let m = (lo + hi) / 2; if nonWorking[m].upperBound < visible.lowerBound { lo = m + 1 } else { hi = m } }
+        var i = lo
+        while i < nonWorking.count, nonWorking[i].lowerBound < visible.upperBound { out.append(nonWorking[i]); i += 1 }
+        guard visible.upperBound > nonWorkingEnd, weekOff.contains(true) else { return out }
+        let day = 1_440.0
+        var k = Int((max(visible.lowerBound, nonWorkingEnd) / day).rounded(.down))
+        while Double(k) * day < visible.upperBound {
+            let a = Double(k) * day
+            if a >= nonWorkingEnd, weekOff[((k % 7) + 7) % 7] {
+                if let last = out.last, last.upperBound == a {
+                    out[out.count - 1] = last.lowerBound..<(a + day)
+                } else {
+                    out.append(a..<(a + day))
+                }
+            }
+            k += 1
+        }
+        return out
+    }
 
     /// - Parameters:
     ///   - collapsed: summary uids whose children are hidden.
@@ -172,6 +208,9 @@ public struct GanttLayout: Sendable {
             day = MPPTime.adding(days: 1, to: day)
         }
         self.nonWorking = spans
+        self.nonWorkingEnd = end.timeIntervalSince(epoch) / 60
+        // Day k after a Monday is Project's weekday (k + 1) % 7 + 1 (1 is Sunday).
+        self.weekOff = (0..<7).map { (project.calendar ?? ProjectCalendar()).workingRanges(weekday: ($0 + 1) % 7 + 1).isEmpty }
 
         // Spatial index over everything drawn in the chart body.
         var entries: [(Rect, Item)] = []

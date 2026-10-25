@@ -11,7 +11,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
+#if os(WASI)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import MPPCFB
 import MPPModel
 
@@ -330,6 +334,10 @@ public enum MPP {
     /// A root stream of our own: each calendar's shifts and holiday sets, as
     /// JSON keyed by calendar name (`CalendarSetup`).
     public static let calendarSetupStream = "ProjectsCalendars"
+
+    /// A root stream of our own: baseline slots 11 and up, which Project has
+    /// no fields for, as JSON (`ExtraBaselines`).
+    public static let extraBaselinesStream = "ProjectsBaselines"
 
     /// The Entry table (table 1, the Gantt Chart's) as Project stores it:
     /// `   214/CTable`, Var2Data field 6 per table — a 12-byte header (table
