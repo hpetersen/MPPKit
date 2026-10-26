@@ -83,28 +83,41 @@ public struct GanttLayout: Sendable {
     public let rowOfTask: [Int: Int]
 
     /// The non-working days overlapping `visible`: the plan's own (holidays
-    /// included) over its range, and the ordinary week beyond it, so the bands
-    /// reach every edge the chart can show.
+    /// included) over its range, and the ordinary week before and after it, so
+    /// the bands reach every edge the chart can show.
     public func nonWorking(in visible: Range<Double>) -> [Range<Double>] {
         var out: [Range<Double>] = []
+        let day = 1_440.0
+        // The ordinary week, from day `first` (counted from the epoch) to `to`.
+        func week(from first: Int, to: Double) {
+            guard weekOff.contains(true) else { return }
+            var k = first
+            while Double(k) * day < to {
+                let a = Double(k) * day
+                if weekOff[((k % 7) + 7) % 7] {
+                    if let last = out.last, last.upperBound == a {
+                        out[out.count - 1] = last.lowerBound..<(a + day)
+                    } else {
+                        out.append(a..<(a + day))
+                    }
+                }
+                k += 1
+            }
+        }
+        let firstDay = Int((visible.lowerBound / day).rounded(.down))
+        week(from: firstDay, to: min(visible.upperBound, 0))
         var lo = 0, hi = nonWorking.count
         while lo < hi { let m = (lo + hi) / 2; if nonWorking[m].upperBound < visible.lowerBound { lo = m + 1 } else { hi = m } }
         var i = lo
-        while i < nonWorking.count, nonWorking[i].lowerBound < visible.upperBound { out.append(nonWorking[i]); i += 1 }
-        guard visible.upperBound > nonWorkingEnd, weekOff.contains(true) else { return out }
-        let day = 1_440.0
-        var k = Int((max(visible.lowerBound, nonWorkingEnd) / day).rounded(.down))
-        while Double(k) * day < visible.upperBound {
-            let a = Double(k) * day
-            if a >= nonWorkingEnd, weekOff[((k % 7) + 7) % 7] {
-                if let last = out.last, last.upperBound == a {
-                    out[out.count - 1] = last.lowerBound..<(a + day)
-                } else {
-                    out.append(a..<(a + day))
-                }
+        while i < nonWorking.count, nonWorking[i].lowerBound < visible.upperBound {
+            if let last = out.last, last.upperBound == nonWorking[i].lowerBound {
+                out[out.count - 1] = last.lowerBound..<nonWorking[i].upperBound
+            } else {
+                out.append(nonWorking[i])
             }
-            k += 1
+            i += 1
         }
+        week(from: max(firstDay, Int((nonWorkingEnd / day).rounded(.up))), to: visible.upperBound)
         return out
     }
 

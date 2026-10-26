@@ -99,6 +99,10 @@ final class GanttTests: XCTestCase {
             XCTAssertEqual(weekday, 7, "a weekend starts on a Saturday")
         }
         XCTAssertEqual(layout.nonWorking(in: 0..<layout.nonWorkingEnd), layout.nonWorking)
+        // And before the plan, for a chart panned past its start.
+        let before = layout.nonWorking(in: (-28 * 1_440)..<(-14 * 1_440))
+        XCTAssertEqual(before.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }, 4 * 1_440, accuracy: 1e-6)
+        XCTAssertEqual(before.first?.lowerBound, -23 * 1_440, "the Saturday three weeks before the epoch")
         // Bars and links are found where they are drawn.
         let backend = byUID[13]!
         let found = layout.index.query(Rect(minX: backend.start + 10, minY: Double(backend.index) + 0.5,
