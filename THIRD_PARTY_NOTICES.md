@@ -1,7 +1,7 @@
 # Third-party notices
 
-MPPKit is Copyright © 2026 Henrik Petersen and is released under
-the GNU General Public License version 3 (see `LICENSE`). It includes code
+MPPKit is Copyright © 2026 Henrik Petersen and is released under the GNU
+Affero General Public License version 3 (see `LICENSE`). It includes code
 ported from the project below, which remains under its own MIT licence; the
 notice that licence requires is reproduced at the end of its section.
 

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hpetersen/MPPKit/actions/workflows/ci.yml/badge.svg)](https://github.com/hpetersen/MPPKit/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/hpetersen/MPPKit/actions/workflows/codeql.yml/badge.svg)](https://github.com/hpetersen/MPPKit/actions/workflows/codeql.yml)
-[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 Native Swift reading **and writing** of Microsoft Project `.mpp` files, for
 macOS and iPadOS. No JVM, no .NET, no Microsoft Project on the
@@ -10,7 +10,7 @@ machine.
 
 MPPKit is the file-format layer of [MPP Studio](https://mppstudio.com), a
 Microsoft Project companion for Mac and iPad, and is published under the
-[GNU GPL v3](LICENSE).
+[GNU AGPL v3](LICENSE).
 
 ## Status
 
@@ -287,12 +287,15 @@ library, that is the place to start.
 ## Licence
 
 MPPKit is free software, released under the
-[GNU General Public License version 3](LICENSE) (`GPL-3.0-only`).
+[GNU Affero General Public License version 3](LICENSE) (`AGPL-3.0-only`).
 Copyright © 2026 Henrik Petersen.
 
-You may use, change and share it under the terms of the GPL. In short, if you
-distribute software that includes MPPKit, that software must also be released
-under the GPL with its source code.
+You may use, change and share it under the terms of the AGPL. In short, if you
+distribute software that includes MPPKit, or let people use it over a network,
+that software must also be released under the AGPL with its source code.
+
+Versions 0.2.0 and earlier were released under the GNU General Public License
+version 3 (`GPL-3.0-only`), and copies of those versions stay under it.
 
 ## Contributing
 

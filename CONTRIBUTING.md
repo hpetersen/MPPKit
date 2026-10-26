@@ -40,7 +40,7 @@ one commit on `main`.
 
 ## Contributor licence agreement
 
-MPPKit is released under the GPL v3, and the same code is used in MPP Studio,
+MPPKit is released under the AGPL v3, and the same code is used in MPP Studio,
 which is not open source. So that a contribution can go into both,
 contributions are accepted on these terms:
 
@@ -48,7 +48,7 @@ contributions are accepted on these terms:
 > sample files), you confirm that you wrote it, or have the right to submit it,
 > and you grant Henrik Petersen a perpetual, worldwide, non-exclusive,
 > royalty-free, irrevocable licence to use, copy, modify, sublicense and
-> distribute it, under the GPL v3 and under any other licence, including in
+> distribute it, under the AGPL v3 and under any other licence, including in
 > closed-source software. You keep the copyright in your contribution, and you
 > may use it however you like.
 
