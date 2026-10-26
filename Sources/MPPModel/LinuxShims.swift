@@ -1,5 +1,5 @@
 // MPPKit: Microsoft Project (.mpp) files in Swift
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // swift-corelibs-foundation lacks String(localized:); on Linux the key is the text.
 
