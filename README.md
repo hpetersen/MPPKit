@@ -129,7 +129,8 @@ Read and written:
   Text1–30, Number1–20, Date1–10, Flag1–20, baselines 0–10;
 - links: FS, SS, FF, SF with lags and leads in any unit — working, elapsed or a
   percentage of the predecessor — and links on summary tasks;
-- work resources with max units, initials, e-mail and their own calendars;
+- work resources with max units, initials, e-mail, their own calendars and
+  Text1–30, Number1–20, Date1–10, Flag1–20;
   assignments with units, work and progress;
 - calendars: Standard edits, holidays and exceptions with their own working
   hours, any number of base calendars;

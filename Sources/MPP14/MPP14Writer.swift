@@ -799,9 +799,10 @@ private final class Session {
         rscDataFields.formUnion(MPP14File.resourceBaselineCost)
         rscDataFields.formUnion(W.Rsc.baselineBudget.flatMap { [$0.work, $0.cost] })
         rscDataFields.formUnion(W.Rsc.baselineTimephased)
-        rscDataFields.formUnion(MPP.CustomField.text)
-        rscDataFields.formUnion(MPP.CustomField.number)
-        rscDataFields.formUnion(MPP.CustomField.date)
+        rscDataFields.formUnion(MPP.ResourceCustomField.text)
+        rscDataFields.formUnion(MPP.ResourceCustomField.number)
+        rscDataFields.formUnion(MPP.ResourceCustomField.date)
+        rscDataFields.formUnion(MPP.ResourceCustomField.flag)
         rscDataFields.formUnion([RF.name, RF.initials, RF.emailAddress])
         let rscProtoVars = rsc.vars(of: 0).filter { !rscDataFields.contains($0.field) }
         if !project.resources.isEmpty && rscProtoRow == nil {
@@ -815,6 +816,8 @@ private final class Session {
         rscOwned.formUnion(W.Rsc.baselineBudget.flatMap { [$0.work, $0.cost] })
         rscOwned.formUnion(W.Rsc.baselineTimephased)
         rscOwned.formUnion([RF.name, RF.initials, RF.emailAddress])
+        rscOwned.formUnion(MPP.ResourceCustomField.text + MPP.ResourceCustomField.number
+                           + MPP.ResourceCustomField.date + MPP.ResourceCustomField.flag)
         var ownRsc: [Int: Row] = [:]
         let rscGUIDs = Dictionary(project.resources.map { ($0.uid, $0.guid) }, uniquingKeysWith: { a, _ in a })
         for row in rsc.rows {
@@ -831,6 +834,18 @@ private final class Session {
             var extra: [(UInt32, [UInt8])] = [(RF.name, MPP.encodeUnicode(res.name))]
             if !res.initials.isEmpty { extra.append((RF.initials, MPP.encodeUnicode(res.initials))) }
             if !res.email.isEmpty { extra.append((RF.emailAddress, MPP.encodeUnicode(res.email))) }
+            for (n, v) in res.text.sorted(by: { $0.key < $1.key }) {
+                extra.append((MPP.ResourceCustomField.text[n - 1], MPP.encodeUnicode(v)))
+            }
+            for (n, v) in res.numbers.sorted(by: { $0.key < $1.key }) {
+                extra.append((MPP.ResourceCustomField.number[n - 1], le(v)))
+            }
+            for (n, v) in res.dateFields.sorted(by: { $0.key < $1.key }) {
+                extra.append((MPP.ResourceCustomField.date[n - 1], MPP.encodeTimestamp(v)))
+            }
+            for (n, id) in MPP.ResourceCustomField.flag.enumerated() {
+                e.bit(id, res.flags[n + 1] ?? false)
+            }
             for (slot, b) in res.baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 extra.append((MPP14File.resourceBaselineWork[slot], le(b.workHours * 600 * W.workScale)))
                 extra.append((MPP14File.resourceBaselineCost[slot], le(b.cost)))
@@ -850,6 +865,10 @@ private final class Session {
             for f in [RF.uniqueID, RF.id, RF.name, RF.maxUnits] { e.bit(f, true) }
             if ownRsc[res.uid] != nil, let was = source?.resource(uid: res.uid) {
                 let mine = Dictionary(rsc.vars(of: res.uid).map { ($0.field, $0.payload) }, uniquingKeysWith: { a, _ in a })
+                // A value-list entry keeps its link to the list, as on tasks.
+                for (n, v) in res.text where was.text[n] == v {
+                    Self.keepUnchanged(&extra, [MPP.ResourceCustomField.text[n - 1]], from: mine)
+                }
                 for slot in res.baselines.projectSlots.keys where res.baselines[slot] == was.baselines[slot] {
                     var fields = [MPP14File.resourceBaselineWork[slot], MPP14File.resourceBaselineCost[slot]]
                     if slot < W.Rsc.baselineBudget.count {
@@ -1058,6 +1077,12 @@ private final class Session {
         for r in project.resources {
             guard r.uid > 0, rscSeen.insert(r.uid).inserted else { throw fail("resource uids must be unique and > 0") }
             guard !r.name.isEmpty else { throw fail("resource \(r.uid) has no name") }
+            for (label, keys, limit) in [("Text", Array(r.text.keys), 30), ("Number", Array(r.numbers.keys), 20),
+                                         ("Date", Array(r.dateFields.keys), 10), ("Flag", Array(r.flags.keys), 20)] {
+                if let bad = keys.first(where: { !(1...limit).contains($0) }) {
+                    throw fail("resource \(r.uid): \(label)\(bad) out of range 1...\(limit)")
+                }
+            }
         }
         for a in project.assignments {
             guard seen.contains(a.taskUID) else { throw fail("assignment references unknown task \(a.taskUID)") }

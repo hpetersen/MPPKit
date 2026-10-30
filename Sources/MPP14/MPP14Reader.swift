@@ -392,25 +392,29 @@ public final class MPP14File {
     /// the caller. Fields with no saved value are left out entirely rather than
     /// reported as empty, so `task.text[1] == nil` means "not set" and an
     /// explicitly blank string is preserved as `""`.
-    private func readCustomFields(_ k: EntityClass, uid: Int,
+    private func readCustomFields(_ k: EntityClass, uid: Int, resource: Bool = false,
                                   text: inout [Int: String],
                                   numbers: inout [Int: Double],
                                   dates: inout [Int: Date],
                                   flags: inout [Int: Bool]) {
-        for (index, id) in MPP.CustomField.text.enumerated() {
+        let ids = resource
+            ? (MPP.ResourceCustomField.text, MPP.ResourceCustomField.number,
+               MPP.ResourceCustomField.date, MPP.ResourceCustomField.flag)
+            : (MPP.CustomField.text, MPP.CustomField.number, MPP.CustomField.date, MPP.CustomField.flag)
+        for (index, id) in ids.0.enumerated() {
             guard let raw = k.varBytes(uid, id), !raw.isEmpty else { continue }
             text[index + 1] = lookupText(raw) ?? MPP.decodeUnicode(raw)
         }
-        for (index, id) in MPP.CustomField.number.enumerated() {
+        for (index, id) in ids.1.enumerated() {
             guard let raw = k.varBytes(uid, id), raw.count >= 8,
                   let v = BinaryReader(raw).f64(at: 0) else { continue }
             numbers[index + 1] = v
         }
-        for (index, id) in MPP.CustomField.date.enumerated() {
+        for (index, id) in ids.2.enumerated() {
             guard let raw = k.varBytes(uid, id) else { continue }
             if let d = MPP.decodeTimestamp(raw, offset: 0) { dates[index + 1] = d }
         }
-        for (index, id) in MPP.CustomField.flag.enumerated() {
+        for (index, id) in ids.3.enumerated() {
             guard let raw = k.varBytes(uid, id) else { continue }
             // Flags are stored as an int32 holding 0 or 1.
             if let v = BinaryReader(raw).i32(at: 0) { flags[index + 1] = v != 0 }
@@ -524,9 +528,12 @@ public final class MPP14File {
             if let cal = k.i32(i, MPP.ResourceField.calendarUID), cal > 0 { r.calendarUID = Int(cal) }
             r.guid = k.bytes(i, MPP.ResourceField.guid, count: 16) ?? []
             r.baselines = Self.readResourceBaselines(k, uid: Int(uid))
-            readCustomFields(k, uid: Int(uid),
+            readCustomFields(k, uid: Int(uid), resource: true,
                                   text: &r.text, numbers: &r.numbers,
                                   dates: &r.dateFields, flags: &r.flags)
+            for (index, id) in MPP.ResourceCustomField.flag.enumerated() where r.flags[index + 1] == nil {
+                if k.flag(i, id) { r.flags[index + 1] = true }
+            }
             out.append(r)
         }
         return out.sorted { ($0.rowID, $0.uid) < ($1.rowID, $1.uid) }
