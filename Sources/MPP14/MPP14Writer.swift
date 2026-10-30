@@ -36,6 +36,16 @@ import MPPModel
 /// tasks, resources, assignments, links or resource calendars over, and it
 /// strips per-record data (notes, custom fields, baselines) from the records
 /// it clones, so a real schedule can serve as the template.
+///
+/// **Saving over the file a project came from** keeps what the model does not
+/// carry. Each task, resource and assignment still in the project (same uid
+/// and GUID) starts from its own record instead of a prototype, so costs and
+/// rates, hyperlinks, outline codes, recurrence, Cost1-10, Duration1-10 and
+/// every other field the writer does not write stay as Project wrote them.
+/// Owned fields that are unchanged keep Project's own bytes too (notes as RTF,
+/// value-list text, baselines with their timephased data), and so does an
+/// assignment's timephased work, splits included, while its dates, work and
+/// progress are unchanged.
 public final class MPP14Writer {
     public struct Options {
         /// Replace the template's saved path, user name and document metadata
@@ -107,6 +117,10 @@ private enum W {
         static let actualWorkData: UInt32 = 50    // timephased actual regular work
         static let actualIrregularData: UInt32 = 87
         static let emptyVars: [UInt32] = [665, 667]   // 16 zero bytes; 667 only on placeholders
+        /// Var 49 for work in one piece, as Project writes it: `u16` count of
+        /// further segments (0), then the fields the writer patches.
+        static let plainContour: [UInt8] = [0, 0, 32, 0, 44, 0, 0, 0] + [UInt8](repeating: 0, count: 24)
+            + [1, 0, 0, 0] + [UInt8](repeating: 0, count: 36)
         static let baselineBudget: [(work: UInt32, cost: UInt32)] = [(673, 674), (677, 678)]
         static let baselineTimephased: [UInt32] = [52, 53]
     }
@@ -233,6 +247,10 @@ private final class Session {
     let relation2010: Bool
     let templateStart: [UInt8]?
     let templateStandard: ProjectCalendar?
+    let templateFile: MPP14File
+    /// The template as a project: what the model held for each record when
+    /// it was read, for telling an unchanged value from an edited one.
+    lazy var source: Project? = try? templateFile.readProject()
 
     init(templateBytes: [UInt8], options: MPP14Writer.Options) throws {
         let file = try MPP14File(bytes: templateBytes)
@@ -251,6 +269,7 @@ private final class Session {
         relation2010 = file.relationLayoutIs2010
         templateStart = file.props[MPP.PropsKey.projectStartDate]
         templateStandard = file.readCalendars().standard
+        templateFile = file
     }
 
     // MARK: Stream access
@@ -317,6 +336,28 @@ private final class Session {
             set("\(storage)/VarMeta", vm)
             set("\(storage)/Var2Data", vd)
         }
+    }
+
+    /// Puts the record's own payloads for `fields` in place of what the
+    /// writer would encode, for a value the model holds unchanged: what
+    /// Project wrote may carry more than the model does (a value-list link,
+    /// timephased baseline work). A field the record lacks is left as encoded.
+    static func keepUnchanged(_ extra: inout [(UInt32, [UInt8])], _ fields: [UInt32], from own: [UInt32: [UInt8]]) {
+        for field in fields {
+            guard let payload = own[field] else { continue }
+            if let i = extra.firstIndex(where: { $0.0 == field }) {
+                extra[i].1 = payload
+            } else {
+                extra.append((field, payload))
+            }
+        }
+    }
+
+    /// A fixed field's raw bytes in a row.
+    static func bytes(_ row: Row, _ item: MPP.FieldItem?, count: Int) -> [UInt8]? {
+        guard let item else { return nil }
+        let src = item.block == 0 ? row.rec : row.rec2
+        return item.offset + count <= src.count ? Array(src[item.offset..<item.offset + count]) : nil
     }
 
     /// Whether a payload is a "no value" — all zero or all `0xFF` — and so
@@ -442,9 +483,14 @@ private final class Session {
         // ---- tasks ----------------------------------------------------------
         let tasks = try table("TBkndTask", metaSize: MPP.taskMetaSize, meta2Size: MPP.taskMeta2Size)
         let protos = try taskPrototypes(tasks)
+        let own = ownTaskRecords(tasks, project)
         var taskRows = tasks.rows.filter { isDeletedStub($0.rec) }
         var taskVars: [(uid: Int, field: UInt32, payload: [UInt8])] = []
-        let summaryGUID = options.newGUID()
+        let summaryGUID = own.summaryGUID ?? options.newGUID()
+        let summaryBaselinesKept = own.records[0] != nil && source.map { was in
+            was.tasks.count == project.tasks.count
+                && project.tasks.allSatisfy { t in was.task(uid: t.uid)?.baselines.projectSlots == t.baselines.projectSlots }
+        } == true
 
         func emit(_ proto: Prototype, uid: Int, rowID: Int, name: String,
                   start: Date, finish: Date, tenths: Int, level: Int, parentUID: Int,
@@ -470,7 +516,7 @@ private final class Session {
             for f in [F.finish, F.earlyFinish] { e.ts(f, finish) }
             e.ts(F.lateStart, task?.lateStart ?? start)
             e.ts(F.lateFinish, task?.lateFinish ?? finish)
-            e.ts(F.created, now)
+            if task != nil || own.records[0] == nil { e.ts(F.created, task?.created ?? now) }
             // Fixed2: GUID, display position, parent GUID.
             if e.row.rec2.count >= 40 {
                 e.row.rec2.replaceSubrange(0..<16, with: guid)
@@ -586,7 +632,11 @@ private final class Session {
             // Var data.
             var extra: [(UInt32, [UInt8])] = []
             if let task {
-                if !task.notes.isEmpty { extra.append((F.notes, MPP14Writer.encodeRTFNotes(task.notes))) }
+                if !task.notes.isEmpty {
+                    // Project's own RTF, fonts and formatting included, while the text is unchanged.
+                    let rtf = own.vars[uid]?[F.notes].flatMap { MPP14File.decodeRTFNotes($0) == task.notes ? $0 : nil }
+                    extra.append((F.notes, rtf ?? MPP14Writer.encodeRTFNotes(task.notes)))
+                }
                 if let wbs = task.wbs { extra.append((F.wbs, MPP.encodeUnicode(wbs))) }
                 for (n, v) in task.text.sorted(by: { $0.key < $1.key }) {
                     extra.append((MPP.CustomField.text[n - 1], MPP.encodeUnicode(v)))
@@ -618,8 +668,45 @@ private final class Session {
                     extra.append((x.bc, W.unsetDouble))
                 }
             }
+            if task == nil, summaryBaselinesKept, let mine = own.vars[0] {
+                // The project summary's baselines span its tasks'; while none
+                // of theirs changed, Project's own are kept.
+                var fields = W.TaskIDs.baselineTimephased
+                for slot in ExtraBaselines.projectSlots {
+                    fields += [MPP14File.taskBaselineStart[slot], MPP14File.taskBaselineFinish[slot],
+                               MPP14File.taskBaselineDuration[slot], MPP14File.taskBaselineUnits[slot],
+                               MPP14File.taskBaselineWork[slot], MPP14File.taskBaselineCost[slot]]
+                    if slot < W.TaskIDs.baselineExtras.count {
+                        let x = W.TaskIDs.baselineExtras[slot]
+                        fields += [x.ds, x.df, x.bw, x.bc]
+                    }
+                }
+                extra.removeAll { fields.contains($0.0) }
+                Self.keepUnchanged(&extra, fields, from: mine)
+            }
+            if let task, let was = source?.task(uid: uid), let mine = own.vars[uid] {
+                // A Text field set from a value list reads back as the entry's
+                // text; the file's own value keeps the link to the list.
+                for (n, v) in task.text where was.text[n] == v {
+                    Self.keepUnchanged(&extra, [MPP.CustomField.text[n - 1]], from: mine)
+                }
+                for slot in task.baselines.projectSlots.keys where task.baselines[slot] == was.baselines[slot] {
+                    var fields = [MPP14File.taskBaselineStart[slot], MPP14File.taskBaselineFinish[slot],
+                                  MPP14File.taskBaselineDuration[slot], MPP14File.taskBaselineUnits[slot],
+                                  MPP14File.taskBaselineWork[slot], MPP14File.taskBaselineCost[slot]]
+                    if slot < W.TaskIDs.baselineExtras.count {
+                        let x = W.TaskIDs.baselineExtras[slot]
+                        fields += [x.ds, x.df, x.bw, x.bc]
+                    }
+                    Self.keepUnchanged(&extra, fields, from: mine)
+                }
+                if task.baselines.projectSlots == was.baselines.projectSlots {
+                    Self.keepUnchanged(&extra, W.TaskIDs.baselineTimephased, from: mine)
+                }
+            }
             for (field, _) in extra { e.bit(field, true) }
             var vars = proto.vars.map { ($0.field, $0.field == F.name ? MPP.encodeUnicode(name) : $0.payload) }
+            if !name.isEmpty, !vars.contains(where: { $0.0 == F.name }) { vars.append((F.name, MPP.encodeUnicode(name))) }
             vars.append(contentsOf: extra)
             e.varBits(Set(vars.map(\.0)))
             if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: vars.count) }
@@ -638,7 +725,7 @@ private final class Session {
                 workHours: project.tasks.filter { $0.parentUID == 0 }
                     .reduce(0) { $0 + ($1.baselines[slot]?.workHours ?? 0) })
         }
-        emit(protos.summary, uid: 0, rowID: 0, name: project.title, start: pStart, finish: pFinish,
+        emit(own.records[0] ?? protos.summary, uid: 0, rowID: 0, name: project.title, start: pStart, finish: pFinish,
              tenths: time.minutes(from: pStart, to: pFinish) * 10, level: 0, parentUID: 0,
              guid: summaryGUID, parentGUID: [UInt8](repeating: 0, count: 16), isSummary: true,
              position: 1, task: nil, percent: pct0,
@@ -654,7 +741,10 @@ private final class Session {
                 calUID = uid
             }
             let isSummaryTask = !(children[t.uid] ?? []).isEmpty
-            emit(isSummaryTask ? protos.summaryTask : protos.leaf, uid: t.uid, rowID: n + 1, name: t.name, start: e.start, finish: e.finish,
+            // The task's own record when it came from this file and is still
+            // the same kind of row: a summary carries fields a leaf lacks.
+            let ownRecord = own.records[t.uid].flatMap { own.summaries.contains(t.uid) == isSummaryTask ? $0 : nil }
+            emit(ownRecord ?? (isSummaryTask ? protos.summaryTask : protos.leaf), uid: t.uid, rowID: n + 1, name: t.name, start: e.start, finish: e.finish,
                  tenths: e.tenths, level: t.outlineLevel, parentUID: t.parentUID, guid: t.guid,
                  parentGUID: parentGUID, isSummary: !(children[t.uid] ?? []).isEmpty, position: n + 2,
                  task: t, percent: pct[t.uid]!, work: workSum[t.uid]!, baselines: t.baselines,
@@ -717,9 +807,26 @@ private final class Session {
         if !project.resources.isEmpty && rscProtoRow == nil {
             throw MPPError.template("no uid-0 resource record to clone")
         }
+        // A resource read from this file starts from its own record, as tasks
+        // do (`ownTaskRecords`): rates, cost rate tables, availability, group,
+        // code, notes and custom fields are kept as Project wrote them.
+        var rscOwned = Set<UInt32>(MPP14File.resourceBaselineWork)
+        rscOwned.formUnion(MPP14File.resourceBaselineCost)
+        rscOwned.formUnion(W.Rsc.baselineBudget.flatMap { [$0.work, $0.cost] })
+        rscOwned.formUnion(W.Rsc.baselineTimephased)
+        rscOwned.formUnion([RF.name, RF.initials, RF.emailAddress])
+        var ownRsc: [Int: Row] = [:]
+        let rscGUIDs = Dictionary(project.resources.map { ($0.uid, $0.guid) }, uniquingKeysWith: { a, _ in a })
+        for row in rsc.rows {
+            guard let uid = rscUID(row), uid != 0, let g = rscGUIDs[uid], g.count == 16,
+                  Self.bytes(row, rscMap.fm[RF.guid], count: 16) == g else { continue }
+            ownRsc[uid] = row
+        }
         for (n, res) in project.resources.enumerated() {
             guard let proto = rscProtoRow else { break }
-            var e = Editor(row: proto, fm: rscMap.fm, bits: rscMap.bits)
+            var e = Editor(row: ownRsc[res.uid] ?? proto, fm: rscMap.fm, bits: rscMap.bits)
+            let baseVars = ownRsc[res.uid] != nil
+                ? rsc.vars(of: res.uid).filter { !rscOwned.contains($0.field) } : rscProtoVars
             for (field, _) in rsc.vars(of: 0) where rscDataFields.contains(field) { e.bit(field, false) }
             var extra: [(UInt32, [UInt8])] = [(RF.name, MPP.encodeUnicode(res.name))]
             if !res.initials.isEmpty { extra.append((RF.initials, MPP.encodeUnicode(res.initials))) }
@@ -741,11 +848,24 @@ private final class Session {
             e.put(RF.guid, res.guid)
             e.put(RF.calendarGUID, res.guid)
             for f in [RF.uniqueID, RF.id, RF.name, RF.maxUnits] { e.bit(f, true) }
+            if ownRsc[res.uid] != nil, let was = source?.resource(uid: res.uid) {
+                let mine = Dictionary(rsc.vars(of: res.uid).map { ($0.field, $0.payload) }, uniquingKeysWith: { a, _ in a })
+                for slot in res.baselines.projectSlots.keys where res.baselines[slot] == was.baselines[slot] {
+                    var fields = [MPP14File.resourceBaselineWork[slot], MPP14File.resourceBaselineCost[slot]]
+                    if slot < W.Rsc.baselineBudget.count {
+                        fields += [W.Rsc.baselineBudget[slot].work, W.Rsc.baselineBudget[slot].cost]
+                    }
+                    Self.keepUnchanged(&extra, fields, from: mine)
+                }
+                if res.baselines.projectSlots == was.baselines.projectSlots {
+                    Self.keepUnchanged(&extra, W.Rsc.baselineTimephased, from: mine)
+                }
+            }
             for (field, _) in extra { e.bit(field, true) }
-            e.varBits(Set(rscProtoVars.map(\.field) + extra.map(\.0)))
-            if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: rscProtoVars.count + extra.count) }
+            e.varBits(Set(baseVars.map(\.field) + extra.map(\.0)))
+            if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: baseVars.count + extra.count) }
             rscRows.append(e.row)
-            for v in rscProtoVars { rscVars.append((res.uid, v.field, v.payload)) }
+            for v in baseVars { rscVars.append((res.uid, v.field, v.payload)) }
             for (field, payload) in extra { rscVars.append((res.uid, field, payload)) }
         }
         writeTable("TBkndRsc", rsc, rows: rscRows, vars: rscVars, fieldClass: MPP.FieldClass.resource)
@@ -983,12 +1103,7 @@ private final class Session {
             let fields = Set((t.varTable[c.uid] ?? [:]).keys)
             structural = structural.map { $0.intersection(fields) } ?? fields
         }
-        var data = Set<UInt32>([F.notes, F.wbs])
-        data.formUnion(MPP.CustomField.text + MPP.CustomField.number + MPP.CustomField.date + MPP.CustomField.flag)
-        data.formUnion(MPP14File.taskBaselineStart + MPP14File.taskBaselineFinish + MPP14File.taskBaselineDuration
-                       + MPP14File.taskBaselineUnits + MPP14File.taskBaselineWork + MPP14File.taskBaselineCost)
-        data.formUnion(W.TaskIDs.baselineTimephased)
-        data.formUnion(W.TaskIDs.baselineExtras.flatMap { [$0.ds, $0.df, $0.bw, $0.bc] })
+        let data = Self.ownedTaskVars
 
         func prototype(_ c: Candidate) -> Prototype {
             var e = Editor(row: c.row, fm: taskMap.fm, bits: taskMap.bits)
@@ -1012,6 +1127,57 @@ private final class Session {
         let summaries = full.filter { $0.uid != 0 && flag($0.row, F.summary) }
         let summaryTask = summaries.first { value($0.row, F.percentComplete) == 0 } ?? summaries.first
         return (prototype(summary), summaryTask.map(prototype) ?? prototype(leaf), prototype(leaf))
+    }
+
+    /// Task var fields the writer writes from the model. Everything else in a
+    /// task's own record is kept as Project wrote it.
+    static let ownedTaskVars: Set<UInt32> = {
+        let F = MPP.TaskField.self
+        var data = Set<UInt32>([F.notes, F.wbs])
+        data.formUnion(MPP.CustomField.text + MPP.CustomField.number + MPP.CustomField.date + MPP.CustomField.flag)
+        data.formUnion(MPP14File.taskBaselineStart + MPP14File.taskBaselineFinish + MPP14File.taskBaselineDuration
+                       + MPP14File.taskBaselineUnits + MPP14File.taskBaselineWork + MPP14File.taskBaselineCost)
+        data.formUnion(W.TaskIDs.baselineTimephased)
+        data.formUnion(W.TaskIDs.baselineExtras.flatMap { [$0.ds, $0.df, $0.bw, $0.bc] })
+        return data
+    }()
+
+    /// The template's own records for the tasks it shares with `project`, by
+    /// uid, with the var fields the writer owns taken out.
+    ///
+    /// When the template is the file the project was read from, each task
+    /// starts from its own record rather than a prototype, so what the model
+    /// does not carry (costs, hyperlinks, outline codes, recurrence, Cost1-10,
+    /// Duration1-10 and the rest) is saved as Project wrote it. A task matches
+    /// only on both uid and GUID, so another file used as the template never
+    /// lends its data to a task that happens to share a uid. The project
+    /// summary (uid 0) is kept when any task matched. `vars` holds every var
+    /// field of each matched task as Project wrote it, owned ones included,
+    /// for `keepUnchanged`.
+    func ownTaskRecords(_ t: Table, _ project: Project)
+        -> (records: [Int: Prototype], summaries: Set<Int>, summaryGUID: [UInt8]?, vars: [Int: [UInt32: [UInt8]]]) {
+        let F = MPP.TaskField.self
+        guard let uidItem = taskMap.fm[F.uniqueID] else { return ([:], [], nil, [:]) }
+        let wanted = Dictionary(project.tasks.map { ($0.uid, $0.guid) }, uniquingKeysWith: { a, _ in a })
+        func guid(_ row: Row) -> [UInt8]? { Self.bytes(row, taskMap.fm[F.guid], count: 16) }
+        var records: [Int: Prototype] = [:], summaries = Set<Int>(), all: [Int: [UInt32: [UInt8]]] = [:]
+        var summaryRow: Row?
+        for row in t.rows where row.rec.count > 100 {
+            guard let raw = BinaryReader(row.rec).u32(at: uidItem.offset) else { continue }
+            let uid = Int(raw)
+            if uid == 0 { summaryRow = row; continue }
+            guard let g = wanted[uid], g.count == 16, guid(row) == g else { continue }
+            let vars = t.vars(of: uid).filter { !Self.ownedTaskVars.contains($0.field) }
+            records[uid] = Prototype(row: row, vars: vars)
+            all[uid] = Dictionary(t.vars(of: uid).map { ($0.field, $0.payload) }, uniquingKeysWith: { a, _ in a })
+            if let bit = taskMap.bits[F.summary], MPP.metaBit(meta: row.meta, meta2: row.meta2, bit) == 1 {
+                summaries.insert(uid)
+            }
+        }
+        guard !records.isEmpty, let summaryRow else { return (records, summaries, nil, all) }
+        records[0] = Prototype(row: summaryRow, vars: t.vars(of: 0).filter { !Self.ownedTaskVars.contains($0.field) })
+        all[0] = Dictionary(t.vars(of: 0).map { ($0.field, $0.payload) }, uniquingKeysWith: { a, _ in a })
+        return (records, summaries, guid(summaryRow), all)
     }
 
     // MARK: Assignments
@@ -1040,7 +1206,14 @@ private final class Session {
                 BinaryReader(w.block == 0 ? row.rec : row.rec2).f64(at: w.offset) } ?? 0
             return work == 0
         }
-        guard let protoRow = real.first(where: unstarted) ?? real.first else {
+        // Prefer one whose planned work runs in one piece: only the first
+        // segment is patched, so a split's further segments would stay behind.
+        func plain(_ row: Row) -> Bool {
+            let contour = t.vars(of: ownUID(row)).first { $0.field == W.Assn.plannedWorkData }?.payload
+            return contour.flatMap { BinaryReader($0).u16(at: 0) } == 0
+        }
+        guard let protoRow = real.first(where: { unstarted($0) && plain($0) }) ?? real.first(where: unstarted)
+                ?? real.first else {
             if project.tasks.isEmpty { return }
             throw MPPError.template("no assignment record to clone")
         }
@@ -1055,14 +1228,36 @@ private final class Session {
         data.formUnion([W.Assn.actualWorkData, W.Assn.actualIrregularData] + W.Assn.emptyVars)
         var protoEditor = Editor(row: protoRow, fm: assnMap.fm, bits: assnMap.bits)
         var protoVars: [(field: UInt32, payload: [UInt8])] = []
-        for v in t.vars(of: ownUID(protoRow)) {
+        for var v in t.vars(of: ownUID(protoRow)) {
             if !data.contains(v.field), structural?.contains(v.field) == true || Self.isNeutral(v.payload) {
+                if v.field == W.Assn.plannedWorkData, BinaryReader(v.payload).u16(at: 0) != 0 {
+                    v.payload = W.Assn.plainContour
+                }
                 protoVars.append(v)
             } else {
                 protoEditor.bit(v.field, false)
             }
         }
         for f in [A.actualStart, A.actualFinish] { protoEditor.bit(f, false) }
+
+        // Each assignment read from this file starts from its own record, as
+        // tasks and resources do: its cost, overtime, notes and custom fields
+        // are kept. It matches on its task and resource, both still the ones
+        // the file had (same GUIDs).
+        let ownedVars = data.union([A.created, W.Assn.plannedWorkData])
+        var own: [String: Row] = [:]
+        if let tg = assnMap.fm[A.taskGUID], let rg = assnMap.fm[A.resourceGUID] {
+            let rscByUID = Dictionary(project.resources.map { ($0.uid, $0.guid) }, uniquingKeysWith: { a, _ in a })
+            for row in real {
+                guard let task = taskUID(row).flatMap({ byUID[Int($0)] }), task.guid.count == 16,
+                      Self.bytes(row, tg, count: 16) == task.guid,
+                      let rIt = assnMap.fm[A.resourceUniqueID],
+                      let r = Self.bytes(row, rIt, count: 4).map({ BinaryReader($0).i32(at: 0) ?? 0 }) else { continue }
+                let rGUID = r == W.nullResourceUID ? W.nullResourceGUID : rscByUID[Int(r)]
+                guard let rGUID, Self.bytes(row, rg, count: 16) == rGUID else { continue }
+                own["\(task.uid)/\(r)"] = row
+            }
+        }
 
         let rscByUID = Dictionary(uniqueKeysWithValues: project.resources.map { ($0.uid, $0) })
         let assigned = Set(project.assignments.map(\.taskUID))
@@ -1080,7 +1275,31 @@ private final class Session {
             let empty = spec.resource == W.nullResourceUID
             let task = byUID[spec.task]!
             let (start, finish, tenths) = eff[spec.task]!
+            let ownRow = own["\(spec.task)/\(spec.resource)"]
             var e = protoEditor
+            // Its own var fields, less those written below; the prototype's
+            // planned-work contour is what gets patched.
+            var baseVars = protoVars
+            // The work as Project laid it out, gaps from splits and contours
+            // included, kept when nothing it depends on has changed.
+            var keptContour: [(field: UInt32, payload: [UInt8])]?
+            if let ownRow {
+                e = Editor(row: ownRow, fm: assnMap.fm, bits: assnMap.bits)
+                for f in [A.actualStart, A.actualFinish] {
+                    if let b = assnMap.bits[f] { MPP.setMetaBit(meta: &e.row.meta, meta2: &e.row.meta2, b, value: false) }
+                }
+                let ownVars = t.vars(of: ownUID(ownRow))
+                baseVars = protoVars.filter { $0.field == W.Assn.plannedWorkData }
+                    + ownVars.filter { !ownedVars.contains($0.field) || $0.field == A.created }
+                if Self.sameSchedule(ownRow, start: start, finish: finish,
+                                     work: Double(tenths) * W.workScale * spec.units,
+                                     units: spec.units * W.pctScale, percent: pct[spec.task] ?? 0, fm: assnMap.fm) {
+                    keptContour = ownVars.filter {
+                        [W.Assn.plannedWorkData, W.Assn.actualWorkData, W.Assn.actualIrregularData].contains($0.field)
+                    }
+                    baseVars.removeAll { $0.field == W.Assn.plannedWorkData }
+                }
+            }
             e.u32(A.uniqueID, UInt32(uid))
             e.u32(A.taskUniqueID, UInt32(spec.task))
             e.i32(A.resourceUniqueID, spec.resource)
@@ -1115,15 +1334,15 @@ private final class Session {
             e.ts(A.resume, reached)
             e.ts(A.stop, reached)
             e.ts(A.finish, finish)
-            e.put(A.guid, options.newGUID())
+            e.put(A.guid, ownRow.flatMap { Self.bytes($0, assnMap.fm[A.guid], count: 16) } ?? options.newGUID())
             e.put(A.taskGUID, task.guid)
             e.put(A.resourceGUID, empty ? W.nullResourceGUID : rscByUID[Int(spec.resource)]!.guid)
             for f in [A.uniqueID, A.taskUniqueID, A.resourceUniqueID, A.units, A.work] { e.bit(f, true) }
 
             var out: [(UInt32, [UInt8])] = []
-            for v in protoVars {
+            for v in baseVars {
                 var payload = v.payload
-                if v.field == A.created {
+                if v.field == A.created, ownRow == nil {
                     payload = MPP.encodeTimestamp(now)
                 } else if v.field == W.Assn.plannedWorkData, payload.count >= 36 {
                     // The planned-work contour Project schedules the assignment
@@ -1140,7 +1359,12 @@ private final class Session {
                 }
                 out.append((v.field, payload))
             }
-            if p > 0 {
+            if let keptContour {
+                for v in keptContour {
+                    out.append((v.field, v.payload))
+                    e.bit(v.field, true)
+                }
+            } else if p > 0 {
                 out.append((W.Assn.actualWorkData,
                             Self.actualWorkContour(units: spec.units, work: work * Double(p) / 100,
                                                    tenths: tenths - remainingTenths)))
@@ -1151,6 +1375,7 @@ private final class Session {
             out.append((665, [UInt8](repeating: 0, count: 16)))
             if empty { out.append((667, [UInt8](repeating: 0, count: 16))) }
             let baselines = spec.baselines ?? task.baselines
+            var baselineEntries: [(UInt32, [UInt8])] = []
             for (slot, b) in baselines.projectSlots.sorted(by: { $0.key < $1.key }) {
                 var entries: [(UInt32, [UInt8])] = [
                     (MPP14File.assignmentBaselineStart[slot], MPP.encodeTimestamp(b.start)),
@@ -1162,15 +1387,51 @@ private final class Session {
                     entries.append((W.Assn.baselineBudget[slot].work, W.unsetDouble))
                     entries.append((W.Assn.baselineBudget[slot].cost, W.unsetDouble))
                 }
-                for (field, _) in entries { e.bit(field, true) }
-                out.append(contentsOf: entries)
+                baselineEntries.append(contentsOf: entries)
             }
+            // A placeholder row carries its task's baselines.
+            let was = empty ? source?.task(uid: spec.task)?.baselines
+                : source?.assignments.first { $0.taskUID == spec.task && $0.resourceUID == Int(spec.resource) }?.baselines
+            if let ownRow, let was {
+                let mine = Dictionary(t.vars(of: ownUID(ownRow)).map { ($0.field, $0.payload) },
+                                      uniquingKeysWith: { a, _ in a })
+                for slot in baselines.projectSlots.keys where baselines[slot] == was[slot] {
+                    var fields = [MPP14File.assignmentBaselineStart[slot], MPP14File.assignmentBaselineFinish[slot],
+                                  MPP14File.assignmentBaselineWork[slot], MPP14File.assignmentBaselineCost[slot]]
+                    if slot < W.Assn.baselineBudget.count {
+                        fields += [W.Assn.baselineBudget[slot].work, W.Assn.baselineBudget[slot].cost]
+                    }
+                    Self.keepUnchanged(&baselineEntries, fields, from: mine)
+                }
+                if baselines.projectSlots == was.projectSlots {
+                    Self.keepUnchanged(&baselineEntries, W.Assn.baselineTimephased, from: mine)
+                }
+            }
+            for (field, _) in baselineEntries { e.bit(field, true) }
+            out.append(contentsOf: baselineEntries)
             e.varBits(Set(out.map(\.0)))
             if e.row.meta.count > 2 { e.row.meta[2] = UInt8(clamping: out.count) }
             rows.append(e.row)
             for (field, payload) in out { vars.append((uid, field, payload)) }
         }
         writeTable("TBkndAssn", t, rows: rows, vars: vars, fieldClass: MPP.FieldClass.assignment)
+    }
+
+    /// Whether an assignment's own record already has the dates, work, units
+    /// and progress it is about to be written with, so its timephased work
+    /// still describes it.
+    static func sameSchedule(_ row: Row, start: Date, finish: Date, work: Double, units: Double,
+                             percent: Int, fm: [UInt32: MPP.FieldItem]) -> Bool {
+        let A = MPP.AssignmentField.self
+        func ts(_ id: UInt32) -> Date? {
+            bytes(row, fm[id], count: 4).flatMap { MPP.decodeTimestamp($0, offset: 0) }
+        }
+        func f64(_ id: UInt32) -> Double? { bytes(row, fm[id], count: 8).flatMap { BinaryReader($0).f64(at: 0) } }
+        // Not every file keeps % work complete in the fixed block; absent, it is 0.
+        let pct = bytes(row, fm[A.percentWorkComplete], count: 2).flatMap { BinaryReader($0).u16(at: 0) }
+        guard let w = f64(A.work), let u = f64(A.units) else { return false }
+        return ts(A.start) == start && ts(A.finish) == finish && abs(w - work) < 0.5
+            && abs(u - units) < 0.5 && Int(pct ?? 0) == percent
     }
 
     /// Var 50: the work done so far, in the single-segment shape Project writes.
@@ -1412,11 +1673,13 @@ private final class Session {
     ///   count, then per name the field id (0x0B40 class + native index) and the
     ///   offset of its NUL-terminated UTF-16 text, counted from byte 4;
     /// - resource and assignment names in the same form (kept as found);
+    ///   task fields the model does not name (outline codes, Cost1-10,
+    ///   Duration1-10...) keep their names and definitions as found too;
     /// - definitions: `u32` count, `u32` byte size, then one record per named
     ///   field: field id, 8, a definition id, 7, a has-value-list flag, the
     ///   field's GUID (000039B7-8BBE-4CEB-82C4-FA8C + the id, big-endian) and
     ///   its value list's GUID. Records already in the file are kept as they
-    ///   are; a newly named field gets one without a value list.
+    ///   are, named or not; a newly named field gets one without a value list.
     func writeFieldAliases(_ project: Project) {
         let path = "\(W.prj)/TBkndTask/Props"
         let key: UInt32 = 0x0440_0001
@@ -1426,12 +1689,15 @@ private final class Session {
         guard let old = props.values[key] else { return }
 
         var named: [(id: UInt32, name: String)] = []
+        var modelled = Set<UInt32>()
         for (kind, natives) in [("text", MPP.CustomField.text), ("number", MPP.CustomField.number),
                                 ("date", MPP.CustomField.date), ("flag", MPP.CustomField.flag)] {
             for (i, native) in natives.enumerated() {
+                let id = UInt32(MPP.FieldClass.task) << 16 | native
+                modelled.insert(id)
                 guard let name = project.fieldAliases["\(kind)\(i + 1)"]?
                     .trimmingCharacters(in: .whitespaces), !name.isEmpty else { continue }
-                named.append((UInt32(MPP.FieldClass.task) << 16 | native, name))
+                named.append((id, name))
             }
         }
         guard !named.isEmpty || !old.isEmpty else { return }
@@ -1459,6 +1725,24 @@ private final class Session {
         let empty: [UInt8] = le(UInt32(8)) + le(UInt32(8)) + le(UInt32(0))
         while sections.count < 3 { sections.append(empty) }
 
+        // In the file's order: names of task fields the model has no place
+        // for as they are, the model's names in place of the ones they had,
+        // then names new to the file.
+        var ordered: [(id: UInt32, name: String)] = []
+        let names = BinaryReader(sections[0])
+        for i in 0..<Int(names.u32(at: 8) ?? 0) {
+            guard let id = names.u32(at: 12 + i * 8), let offset = names.u32(at: 16 + i * 8).map(Int.init),
+                  4 + offset < sections[0].count else { continue }
+            if modelled.contains(id) {
+                if let n = named.first(where: { $0.id == id }) { ordered.append(n) }
+                continue
+            }
+            var end = 4 + offset
+            while end + 1 < sections[0].count, sections[0][end] != 0 || sections[0][end + 1] != 0 { end += 2 }
+            ordered.append((id, MPP.decodeUnicode(Array(sections[0][(4 + offset)..<end]))))
+        }
+        named = ordered + named.filter { n in !ordered.contains { $0.id == n.id } }
+
         // Task names.
         var table: [UInt8] = [], text: [UInt8] = []
         let namesStart = 12 + named.count * 8
@@ -1469,10 +1753,10 @@ private final class Session {
         let length = UInt32(8 + table.count + text.count)
         sections[0] = le(length) + le(length) + le(UInt32(named.count)) + table + text
 
-        // Definitions: the file's, less task fields no longer named, plus new.
+        // Definitions: the file's, all kept, plus one per newly named field.
+        // Project keeps a definition for a field without a name too: it holds
+        // the field's value list, formula and graphical indicators.
         func u32(_ b: [UInt8], _ at: Int) -> UInt32 { BinaryReader(b).u32(at: at) ?? 0 }
-        let taskIDs = Set(named.map(\.id))
-        records.removeAll { u32($0, 0) >> 16 == UInt32(MPP.FieldClass.task) && !taskIDs.contains(u32($0, 0)) }
         var nextDefinition = records.map { u32($0, 8) & 0xFFFF }.max().map { $0 + 1 } ?? 0x4064
         for (id, _) in named where !records.contains(where: { u32($0, 0) == id }) {
             var rec = [UInt8](repeating: 0, count: max(recordSize, 52))
