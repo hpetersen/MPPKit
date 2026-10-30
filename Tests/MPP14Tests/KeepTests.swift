@@ -189,6 +189,50 @@ final class KeepTests: XCTestCase {
         XCTAssertGreaterThan(seen, 0)
     }
 
+    /// Resources number their custom fields on their own (Text1 is 8, not
+    /// the task's 51). `mpp14resource.mpp` has Text1-3 "1", "2", "3".
+    func testResourceCustomFieldsReadAndSave() throws {
+        let file = try corpus("mpp14resource.mpp")
+        var project = try MPP14File(bytes: file).readProject()
+        let first = try XCTUnwrap(project.resources.first { !$0.text.isEmpty })
+        XCTAssertEqual(first.text[1], "1")
+        XCTAssertEqual(first.text[2], "2")
+        XCTAssertEqual(first.text[3], "3")
+        XCTAssertEqual(first.numbers[1], 1)
+        try assertKept(file, try save(project, over: file), "TBkndRsc", [8, 9, 30, 112, 113, 173, 174],
+                       "resource custom fields")
+
+        let i = project.resources.firstIndex { $0.uid == first.uid }!
+        project.resources[i].text[2] = "Changed"
+        project.resources[i].text[30] = "Last"
+        project.resources[i].numbers[20] = 42.5
+        project.resources[i].dateFields[10] = MPPTime.date(2026, 3, 2, 8)
+        project.resources[i].flags[10] = true
+        project.resources[i].flags[1] = true
+        let saved = try save(project, over: file)
+        XCTAssertTrue(try MPP14File(bytes: saved).conformanceIssues().isEmpty)
+        let back = try XCTUnwrap(try MPP14File(bytes: saved).readProject().resource(uid: first.uid))
+        XCTAssertEqual(back.text, project.resources[i].text)
+        XCTAssertEqual(back.numbers, project.resources[i].numbers)
+        XCTAssertEqual(back.dateFields, project.resources[i].dateFields)
+        XCTAssertEqual(back.flags.filter(\.value), project.resources[i].flags.filter(\.value))
+    }
+
+    /// The same on a new plan over the blank template, which needs no corpus.
+    func testResourceCustomFieldsOnANewPlan() throws {
+        let template = [UInt8](try Data(contentsOf: Self.root.appendingPathComponent("Samples/Blank-Template.mpp")))
+        var project = SampleProject.make()
+        project.resources[0].text = [1: "Crane", 12: "Site B"]
+        project.resources[0].numbers = [1: 12.5]
+        project.resources[0].flags = [2: true]
+        let back = try MPP14File(bytes: try MPP14Writer(template: template).build(project)).readProject()
+        let r = try XCTUnwrap(back.resource(uid: project.resources[0].uid))
+        XCTAssertEqual(r.text, [1: "Crane", 12: "Site B"])
+        XCTAssertEqual(r.numbers, [1: 12.5])
+        XCTAssertEqual(r.flags.filter(\.value), [2: true])
+        XCTAssertTrue(back.resources.dropFirst().allSatisfy { $0.text.isEmpty && $0.numbers.isEmpty })
+    }
+
     /// Another file used as the template lends nothing to a task that only
     /// shares its uid: records match on uid and GUID.
     func testAnotherTemplateLendsNothing() throws {
