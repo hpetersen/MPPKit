@@ -33,5 +33,11 @@ jobs:
         run: |
           prerelease=""
           case "$TAG" in *-*) prerelease="--prerelease";; esac
-          gh release create "$TAG" --verify-tag --generate-notes --title "MPPKit $TAG" $prerelease \
-            Samples/MPPKit-Feature-Sample.mpp Samples/Blank-Template.mpp
+          samples="Samples/MPPKit-Feature-Sample.mpp Samples/Blank-Template.mpp"
+          # A release made by hand with `gh release create` already exists:
+          # attach the samples to it instead of failing.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber $samples
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "MPPKit $TAG" $prerelease $samples
+          fi
